@@ -7,8 +7,8 @@ const H3Event = @import("event.zig").H3Event;
 const Router = @import("router.zig").Router;
 pub const Handler = @import("router.zig").Handler;
 
-/// Middleware function type
-pub const Middleware = *const fn (*H3Event, Handler) anyerror!void;
+/// Middleware function type that takes event and app context
+pub const Middleware = *const fn (*H3Event, *H3, usize, Handler) anyerror!void;
 
 /// Global hook function types
 pub const OnRequestHook = *const fn (*H3Event) anyerror!void;
@@ -22,6 +22,21 @@ pub const H3Config = struct {
     on_response: ?OnResponseHook = null,
     on_error: ?OnErrorHook = null,
 };
+
+/// Execute middleware at a specific index in the chain
+fn executeMiddlewareAtIndex(app: *H3, event: *H3Event, index: usize, final_handler: Handler) !void {
+    if (index >= app.middlewares.items.len) {
+        // All middlewares executed, call the final handler
+        try final_handler(event);
+        return;
+    }
+
+    // Get current middleware
+    const middleware = app.middlewares.items[index];
+
+    // Call the middleware with the current context
+    try middleware(event, app, index + 1, final_handler);
+}
 
 /// H3 application class
 pub const H3 = struct {
@@ -169,47 +184,12 @@ pub const H3 = struct {
 
     /// Execute the middleware chain
     fn executeMiddlewareChain(self: *H3, event: *H3Event, final_handler: Handler) !void {
-        if (self.middlewares.items.len == 0) {
-            try final_handler(event);
-            return;
-        }
+        try executeMiddlewareAtIndex(self, event, 0, final_handler);
+    }
 
-        // Create a context for the middleware chain
-        const MiddlewareContext = struct {
-            app: *H3,
-            event: *H3Event,
-            index: usize,
-            final_handler: Handler,
-
-            fn next(ctx: *@This()) !void {
-                if (ctx.index >= ctx.app.middlewares.items.len) {
-                    try ctx.final_handler(ctx.event);
-                    return;
-                }
-
-                const middleware = ctx.app.middlewares.items[ctx.index];
-                ctx.index += 1;
-
-                const next_handler = struct {
-                    fn handler(e: *H3Event) !void {
-                        _ = e;
-                        // This is a simplified implementation
-                        // In a real implementation, we'd need proper closure handling
-                    }
-                }.handler;
-
-                try middleware(ctx.event, next_handler);
-            }
-        };
-
-        var ctx = MiddlewareContext{
-            .app = self,
-            .event = event,
-            .index = 0,
-            .final_handler = final_handler,
-        };
-
-        try ctx.next();
+    /// Call the next middleware in the chain (used by middleware implementations)
+    pub fn next(self: *H3, event: *H3Event, index: usize, final_handler: Handler) !void {
+        try executeMiddlewareAtIndex(self, event, index, final_handler);
     }
 
     /// Get the number of registered routes
@@ -259,9 +239,9 @@ test "H3.middleware registration" {
     defer app.deinit();
 
     const testMiddleware = struct {
-        fn middleware(event: *H3Event, next: Handler) !void {
-            _ = event;
-            _ = next;
+        fn middleware(event: *H3Event, h3_app: *H3, index: usize, final_handler: Handler) !void {
+            // Call next middleware
+            try h3_app.next(event, index, final_handler);
         }
     }.middleware;
 
@@ -293,4 +273,67 @@ test "H3.handle basic request" {
 
     try std.testing.expectEqualStrings("Hello, World!", event.response.body.?);
     try std.testing.expectEqual(HttpStatus.ok, event.response.status);
+}
+
+test "H3.middleware chain execution" {
+    var app = H3.init(std.testing.allocator);
+    defer app.deinit();
+
+    // This test verifies middleware chain execution order
+
+    // First middleware
+    const middleware1 = struct {
+        fn middleware(event: *H3Event, h3_app: *H3, index: usize, final_handler: Handler) !void {
+            // Get context from event (simplified for test)
+            try event.setContext("test", "1");
+
+            // Call next middleware
+            try h3_app.next(event, index, final_handler);
+
+            // Post-processing
+            try event.setContext("post1", "done");
+        }
+    }.middleware;
+
+    // Second middleware
+    const middleware2 = struct {
+        fn middleware(event: *H3Event, h3_app: *H3, index: usize, final_handler: Handler) !void {
+            try event.setContext("test2", "2");
+
+            // Call next middleware
+            try h3_app.next(event, index, final_handler);
+
+            try event.setContext("post2", "done");
+        }
+    }.middleware;
+
+    const testHandler = struct {
+        fn handler(event: *H3Event) !void {
+            // Verify middlewares ran
+            try std.testing.expectEqualStrings("1", event.getContext("test").?);
+            try std.testing.expectEqualStrings("2", event.getContext("test2").?);
+
+            try event.sendText("Middleware test passed!");
+        }
+    }.handler;
+
+    // Register middlewares and handler
+    _ = app.use(middleware1);
+    _ = app.use(middleware2);
+    _ = app.get("/test", testHandler);
+
+    var event = H3Event.init(std.testing.allocator);
+    defer event.deinit();
+
+    event.request.method = .GET;
+    try event.request.parseUrl("/test");
+
+    try app.handle(&event);
+
+    // Verify response
+    try std.testing.expectEqualStrings("Middleware test passed!", event.response.body.?);
+
+    // Verify post-processing ran
+    try std.testing.expectEqualStrings("done", event.getContext("post1").?);
+    try std.testing.expectEqualStrings("done", event.getContext("post2").?);
 }

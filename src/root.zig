@@ -8,6 +8,8 @@ const std = @import("std");
 // Re-export core modules
 pub const H3 = @import("core/app.zig").H3;
 pub const H3Event = @import("core/event.zig").H3Event;
+pub const Handler = @import("core/app.zig").Handler;
+pub const Middleware = @import("core/app.zig").Middleware;
 pub const HttpMethod = @import("http/method.zig").HttpMethod;
 pub const HttpStatus = @import("http/status.zig").HttpStatus;
 

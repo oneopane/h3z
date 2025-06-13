@@ -116,12 +116,13 @@ pub fn setNoCache(event: *H3Event) !void {
 }
 
 /// Create a simple logger middleware
-pub fn logger(event: *H3Event, next: @import("core/app.zig").Handler) !void {
+pub fn logger(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
     const start_time = std.time.milliTimestamp();
 
     std.log.info("{s} {s}", .{ event.getMethod().toString(), event.getPath() });
 
-    try next(event);
+    // Call next middleware
+    try app.next(event, index, final_handler);
 
     const end_time = std.time.milliTimestamp();
     const duration = end_time - start_time;
@@ -132,7 +133,7 @@ pub fn logger(event: *H3Event, next: @import("core/app.zig").Handler) !void {
 /// Create a CORS middleware
 pub fn cors(origin: ?[]const u8) @import("core/app.zig").Middleware {
     return struct {
-        fn middleware(event: *H3Event, next: @import("core/app.zig").Handler) !void {
+        fn middleware(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
             try setCors(event, origin);
 
             // Handle preflight requests
@@ -141,7 +142,8 @@ pub fn cors(origin: ?[]const u8) @import("core/app.zig").Middleware {
                 return;
             }
 
-            try next(event);
+            // Call next middleware
+            try app.next(event, index, final_handler);
         }
     }.middleware;
 }
@@ -149,9 +151,10 @@ pub fn cors(origin: ?[]const u8) @import("core/app.zig").Middleware {
 /// Create a security headers middleware
 pub fn security() @import("core/app.zig").Middleware {
     return struct {
-        fn middleware(event: *H3Event, next: @import("core/app.zig").Handler) !void {
+        fn middleware(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
             try setSecurity(event);
-            try next(event);
+            // Call next middleware
+            try app.next(event, index, final_handler);
         }
     }.middleware;
 }
@@ -159,13 +162,14 @@ pub fn security() @import("core/app.zig").Middleware {
 /// Create a JSON body parser middleware
 pub fn jsonParser() @import("core/app.zig").Middleware {
     return struct {
-        fn middleware(event: *H3Event, next: @import("core/app.zig").Handler) !void {
+        fn middleware(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
             // Only parse JSON for requests with JSON content type
             if (event.isJson()) {
                 // In a real implementation, we'd parse the JSON here
                 // and store it in the event context
             }
-            try next(event);
+            // Call next middleware
+            try app.next(event, index, final_handler);
         }
     }.middleware;
 }
