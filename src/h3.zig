@@ -69,6 +69,17 @@ pub const internal = struct {
     pub const patterns = @import("internal/patterns.zig");
 };
 
+// Server modules
+pub const server = struct {
+    pub const serve = @import("server/serve.zig");
+    pub const config = @import("server/config.zig");
+    pub const adapter = @import("server/adapter.zig");
+    pub const adapters = struct {
+        pub const std = @import("server/adapters/std.zig");
+        pub const libxev = @import("server/adapters/libxev.zig");
+    };
+};
+
 // Convenience functions for better API
 /// Create a new H3 application
 pub fn createApp(allocator: std.mem.Allocator) App {

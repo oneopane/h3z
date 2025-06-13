@@ -25,6 +25,7 @@ pub fn main() !void {
     _ = app.get("/api/status", statusHandler);
 
     std.log.info("🚀 Simple H3 server starting on http://127.0.0.1:3000", .{});
+    std.log.info("Press Ctrl+C to stop the server", .{});
 
     // Start server
     try h3.serve(&app, .{ .port = 3000 });
