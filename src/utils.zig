@@ -1,180 +1,14 @@
-//! Utility functions for H3 applications
+//! Utility functions for H3 framework
+//! This module provides organized utility functions for HTTP operations
 
 const std = @import("std");
-const H3Event = @import("core/event.zig").H3Event;
-const HttpStatus = @import("http/status.zig").HttpStatus;
-const MimeTypes = @import("http/headers.zig").MimeTypes;
 
-/// Send a plain text response
-pub fn send(event: *H3Event, text: []const u8) !void {
-    try event.sendText(text);
-}
+// Export utility modules
+pub const request = @import("utils/request.zig");
+pub const response = @import("utils/response.zig");
+pub const middleware = @import("utils/middleware.zig");
 
-/// Send an HTML response
-pub fn sendHtml(event: *H3Event, html: []const u8) !void {
-    try event.sendHtml(html);
-}
-
-/// Send a JSON response from a string
-pub fn sendJson(event: *H3Event, json: []const u8) !void {
-    try event.sendJson(json);
-}
-
-/// Send a JSON response from a value
-pub fn sendJsonValue(event: *H3Event, value: anytype) !void {
-    try event.sendJsonValue(value);
-}
-
-/// Send a redirect response
-pub fn redirect(event: *H3Event, location: []const u8, status: ?HttpStatus) !void {
-    try event.redirect(location, status);
-}
-
-/// Send a 404 Not Found response
-pub fn notFound(event: *H3Event, message: ?[]const u8) !void {
-    event.setStatus(.not_found);
-    try event.sendText(message orelse "Not Found");
-}
-
-/// Send a 400 Bad Request response
-pub fn badRequest(event: *H3Event, message: ?[]const u8) !void {
-    event.setStatus(.bad_request);
-    try event.sendText(message orelse "Bad Request");
-}
-
-/// Send a 401 Unauthorized response
-pub fn unauthorized(event: *H3Event, message: ?[]const u8) !void {
-    event.setStatus(.unauthorized);
-    try event.sendText(message orelse "Unauthorized");
-}
-
-/// Send a 403 Forbidden response
-pub fn forbidden(event: *H3Event, message: ?[]const u8) !void {
-    event.setStatus(.forbidden);
-    try event.sendText(message orelse "Forbidden");
-}
-
-/// Send a 500 Internal Server Error response
-pub fn internalServerError(event: *H3Event, message: ?[]const u8) !void {
-    event.setStatus(.internal_server_error);
-    try event.sendText(message orelse "Internal Server Error");
-}
-
-/// Get a request header value
-pub fn getHeader(event: *const H3Event, name: []const u8) ?[]const u8 {
-    return event.getHeader(name);
-}
-
-/// Set a response header
-pub fn setHeader(event: *H3Event, name: []const u8, value: []const u8) !void {
-    try event.setHeader(name, value);
-}
-
-/// Get a query parameter
-pub fn getQuery(event: *const H3Event, key: []const u8) ?[]const u8 {
-    return event.getQuery(key);
-}
-
-/// Get a route parameter
-pub fn getParam(event: *const H3Event, key: []const u8) ?[]const u8 {
-    return event.getParam(key);
-}
-
-/// Read the request body
-pub fn readBody(event: *const H3Event) ?[]const u8 {
-    return event.readBody();
-}
-
-/// Parse JSON from request body
-pub fn readJson(event: *const H3Event, comptime T: type) !T {
-    return event.readJson(T);
-}
-
-/// Set CORS headers with default values
-pub fn setCors(event: *H3Event, origin: ?[]const u8) !void {
-    try event.response.setCors(.{
-        .origin = origin orelse "*",
-        .methods = "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-        .headers = "Content-Type, Authorization",
-        .credentials = false,
-    });
-}
-
-/// Set security headers with default values
-pub fn setSecurity(event: *H3Event) !void {
-    try event.setSecurity(.{
-        .hsts = true,
-        .nosniff = true,
-        .frame_options = "DENY",
-        .xss_protection = true,
-    });
-}
-
-/// Set no-cache headers
-pub fn setNoCache(event: *H3Event) !void {
-    try event.setNoCache();
-}
-
-/// Create a simple logger middleware
-pub fn logger(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
-    const start_time = std.time.milliTimestamp();
-
-    std.log.info("{s} {s}", .{ event.getMethod().toString(), event.getPath() });
-
-    // Call next middleware
-    try app.next(event, index, final_handler);
-
-    const end_time = std.time.milliTimestamp();
-    const duration = end_time - start_time;
-
-    std.log.info("{s} {s} {} {}ms", .{ event.getMethod().toString(), event.getPath(), event.response.status.code(), duration });
-}
-
-/// Create a CORS middleware with default origin "*"
-pub fn corsDefault(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
-    try setCors(event, "*");
-
-    // Handle preflight requests
-    if (event.getMethod() == .OPTIONS) {
-        event.setStatus(.no_content);
-        return;
-    }
-
-    // Call next middleware
-    try app.next(event, index, final_handler);
-}
-
-/// Create a CORS middleware factory (simplified - returns a function that uses "*" origin)
-pub fn cors(origin: ?[]const u8) @import("core/app.zig").Middleware {
-    _ = origin; // For now, ignore the parameter to avoid closure issues
-    return corsDefault;
-}
-
-/// Create a security headers middleware
-pub fn security() @import("core/app.zig").Middleware {
-    return struct {
-        fn middleware(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
-            try setSecurity(event);
-            // Call next middleware
-            try app.next(event, index, final_handler);
-        }
-    }.middleware;
-}
-
-/// Create a JSON body parser middleware
-pub fn jsonParser() @import("core/app.zig").Middleware {
-    return struct {
-        fn middleware(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
-            // Only parse JSON for requests with JSON content type
-            if (event.isJson()) {
-                // In a real implementation, we'd parse the JSON here
-                // and store it in the event context
-            }
-            // Call next middleware
-            try app.next(event, index, final_handler);
-        }
-    }.middleware;
-}
+// Additional utility functions
 
 /// URL decode a string (simplified implementation)
 pub fn urlDecode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
@@ -237,23 +71,7 @@ pub fn parseFormData(allocator: std.mem.Allocator, body: []const u8) !std.HashMa
     return result;
 }
 
-test "utils.send" {
-    var event = H3Event.init(std.testing.allocator);
-    defer event.deinit();
-
-    try send(&event, "Hello, World!");
-    try std.testing.expectEqualStrings("Hello, World!", event.response.body.?);
-}
-
-test "utils.notFound" {
-    var event = H3Event.init(std.testing.allocator);
-    defer event.deinit();
-
-    try notFound(&event, null);
-    try std.testing.expectEqual(HttpStatus.not_found, event.response.status);
-    try std.testing.expectEqualStrings("Not Found", event.response.body.?);
-}
-
+// Tests for the utility functions
 test "utils.urlDecode" {
     const allocator = std.testing.allocator;
 

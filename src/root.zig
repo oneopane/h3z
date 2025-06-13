@@ -1,28 +1,13 @@
-//! ZH3 - A Zig HTTP framework inspired by H3.js
+//! H3 - Zero-dependency HTTP framework for Zig
 //!
-//! ZH3 is a minimal, fast, and composable HTTP server framework for Zig.
-//! It provides a simple API for building web applications and APIs.
+//! H3 is a fast, lightweight HTTP framework inspired by H3.js but built specifically for Zig.
+//! It provides a clean API for building web applications and APIs with zero external dependencies.
+//!
+//! This is the legacy entry point. Use the new h3.zig module for the modern API.
 
-const std = @import("std");
-
-// Re-export core modules
-pub const H3 = @import("core/app.zig").H3;
-pub const H3Event = @import("core/event.zig").H3Event;
-pub const Handler = @import("core/app.zig").Handler;
-pub const Middleware = @import("core/app.zig").Middleware;
-pub const HttpMethod = @import("http/method.zig").HttpMethod;
-pub const HttpStatus = @import("http/status.zig").HttpStatus;
-
-// Re-export utility functions
-pub const utils = @import("utils.zig");
-
-// Re-export server functions
-pub const serve = @import("server/serve.zig").serve;
+// Re-export the new API
+pub usingnamespace @import("h3.zig");
 
 test {
-    // Import all test files
-    _ = @import("core/app.zig");
-    _ = @import("core/event.zig");
-    _ = @import("http/method.zig");
-    _ = @import("http/status.zig");
+    @import("std").testing.refAllDecls(@This());
 }

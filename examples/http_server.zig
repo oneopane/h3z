@@ -1,8 +1,8 @@
 //! Real HTTP Server Example
-//! Demonstrates running an actual HTTP server with ZH3
+//! Demonstrates running an actual HTTP server with H3
 
 const std = @import("std");
-const zh3 = @import("zh3");
+const h3 = @import("h3");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -10,21 +10,21 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Create H3 app
-    var app = zh3.H3.init(allocator);
+    var app = h3.createApp(allocator);
     defer app.deinit();
 
     // Add middleware
-    _ = app.use(zh3.utils.logger);
-    _ = app.use(zh3.utils.cors("*"));
+    _ = app.use(h3.middleware.logger);
+    _ = app.use(h3.middleware.cors);
 
     // Add routes
     _ = app.get("/", homeHandler);
     _ = app.get("/api/health", healthHandler);
     _ = app.get("/api/time", timeHandler);
     _ = app.post("/api/echo", echoHandler);
-    _ = app.get("/api/users/:id", userHandler);
+    _ = app.get("/api/users/:id", getUserHandler);
 
-    std.log.info("🚀 Starting ZH3 HTTP Server", .{});
+    std.log.info("🚀 Starting H3 HTTP Server", .{});
     std.log.info("============================", .{});
     std.log.info("", .{});
     std.log.info("Server will start on: http://127.0.0.1:3000", .{});
@@ -40,19 +40,19 @@ pub fn main() !void {
     std.log.info("", .{});
 
     // Start the server
-    try zh3.serve(&app, .{
+    try h3.serve(&app, .{
         .host = "127.0.0.1",
         .port = 3000,
     });
 }
 
 // Route handlers
-fn homeHandler(event: *zh3.H3Event) !void {
+fn homeHandler(event: *h3.Event) !void {
     const html =
         \\<!DOCTYPE html>
         \\<html>
         \\<head>
-        \\    <title>ZH3 HTTP Server</title>
+        \\    <title>H3 HTTP Server</title>
         \\    <style>
         \\        body { 
         \\            font-family: Arial, sans-serif; 
@@ -89,8 +89,8 @@ fn homeHandler(event: *zh3.H3Event) !void {
         \\</head>
         \\<body>
         \\    <div class="container">
-        \\        <h1>⚡ ZH3 HTTP Server</h1>
-        \\        <p>Welcome! This is a real HTTP server built with the ZH3 framework for Zig.</p>
+        \\        <h1>⚡ H3 HTTP Server</h1>
+        \\        <p>Welcome! This is a real HTTP server built with the H3 framework for Zig.</p>
         \\        
         \\        <h2>🔗 Available Endpoints</h2>
         \\        
@@ -112,7 +112,7 @@ fn homeHandler(event: *zh3.H3Event) !void {
         \\        <div class="endpoint">
         \\            <span class="method">POST</span> /api/echo
         \\            <p>Echo request body (use curl or Postman)</p>
-        \\            <pre>curl -X POST http://localhost:3000/api/echo -H "Content-Type: application/json" -d '{"message": "Hello ZH3!"}'</pre>
+        \\            <pre>curl -X POST http://localhost:3000/api/echo -H "Content-Type: application/json" -d '{"message": "Hello H3!"}'</pre>
         \\        </div>
         \\        
         \\        <h2>🛠️ Framework Features</h2>
@@ -127,20 +127,20 @@ fn homeHandler(event: *zh3.H3Event) !void {
         \\        </ul>
         \\        
         \\        <h2>📚 Learn More</h2>
-        \\        <p>Check out the <a href="https://github.com/your-repo/zh3">ZH3 GitHub repository</a> for documentation and examples.</p>
+        \\        <p>Check out the <a href="https://github.com/your-repo/h3">H3 GitHub repository</a> for documentation and examples.</p>
         \\    </div>
         \\</body>
         \\</html>
     ;
 
     try event.setHeader("Content-Type", "text/html; charset=utf-8");
-    try zh3.utils.send(event, html);
+    try h3.sendText(event, html);
 }
 
-fn healthHandler(event: *zh3.H3Event) !void {
+fn healthHandler(event: *h3.Event) !void {
     const health = .{
         .status = "healthy",
-        .server = "ZH3",
+        .server = "H3",
         .version = "0.1.0",
         .timestamp = std.time.timestamp(),
         .uptime = "running",
@@ -150,10 +150,10 @@ fn healthHandler(event: *zh3.H3Event) !void {
         },
     };
 
-    try zh3.utils.sendJsonValue(event, health);
+    try h3.sendJson(event, health);
 }
 
-fn timeHandler(event: *zh3.H3Event) !void {
+fn timeHandler(event: *h3.Event) !void {
     const now = std.time.timestamp();
     const time_info = .{
         .timestamp = now,
@@ -162,14 +162,14 @@ fn timeHandler(event: *zh3.H3Event) !void {
         .server_time = now,
     };
 
-    try zh3.utils.sendJsonValue(event, time_info);
+    try h3.sendJson(event, time_info);
 }
 
-fn echoHandler(event: *zh3.H3Event) !void {
-    const body = zh3.utils.readBody(event) orelse "";
+fn echoHandler(event: *h3.Event) !void {
+    const body = h3.readBody(event) orelse "";
 
     const echo_response = .{
-        .message = "Echo response from ZH3 server",
+        .message = "Echo response from H3 server",
         .method = event.getMethod().toString(),
         .path = event.getPath(),
         .headers = .{
@@ -185,15 +185,15 @@ fn echoHandler(event: *zh3.H3Event) !void {
         .timestamp = std.time.timestamp(),
     };
 
-    try zh3.utils.sendJsonValue(event, echo_response);
+    try h3.sendJson(event, echo_response);
 }
 
-fn userHandler(event: *zh3.H3Event) !void {
-    const user_id = zh3.utils.getParam(event, "id") orelse "unknown";
+fn getUserHandler(event: *h3.Event) !void {
+    const user_id = h3.getParam(event, "id") orelse "unknown";
 
     // Parse user ID
     const id = std.fmt.parseInt(u32, user_id, 10) catch {
-        try zh3.utils.badRequest(event, "Invalid user ID format");
+        try h3.response.badRequest(event, "Invalid user ID format");
         return;
     };
 
@@ -206,10 +206,10 @@ fn userHandler(event: *zh3.H3Event) !void {
         .active = id % 2 == 1, // Odd IDs are active
         .profile = .{
             .display_name = try std.fmt.allocPrint(event.allocator, "User {d}", .{id}),
-            .bio = "This is a mock user profile generated by ZH3",
+            .bio = "This is a mock user profile generated by H3",
             .location = "Internet",
         },
     };
 
-    try zh3.utils.sendJsonValue(event, user);
+    try h3.sendJson(event, user);
 }

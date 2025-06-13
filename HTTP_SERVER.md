@@ -1,6 +1,6 @@
-# ZH3 HTTP Server
+# H3 HTTP Server
 
-ZH3 includes a complete HTTP server implementation that allows you to run real web servers with your applications.
+H3 includes a complete HTTP server implementation that allows you to run real web servers with your applications.
 
 ## 🚀 Quick Start
 
@@ -8,24 +8,24 @@ ZH3 includes a complete HTTP server implementation that allows you to run real w
 
 ```zig
 const std = @import("std");
-const zh3 = @import("zh3");
+const h3 = @import("h3");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var app = zh3.H3.init(allocator);
+    var app = h3.createApp(allocator);
     defer app.deinit();
 
     _ = app.get("/", homeHandler);
 
     // Start server on port 3000
-    try zh3.serve(&app, .{ .port = 3000 });
+    try h3.serve(&app, .{ .port = 3000 });
 }
 
-fn homeHandler(event: *zh3.H3Event) !void {
-    try zh3.utils.send(event, "Hello from ZH3 HTTP Server!");
+fn homeHandler(event: *h3.Event) !void {
+    try h3.sendText(event, "Hello from H3 HTTP Server!");
 }
 ```
 
@@ -56,19 +56,19 @@ pub const ServeOptions = struct {
 
 ```zig
 // Default configuration (127.0.0.1:3000)
-try zh3.serve(&app, .{});
+try h3.serve(&app, .{});
 
 // Custom port
-try zh3.serve(&app, .{ .port = 8080 });
+try h3.serve(&app, .{ .port = 8080 });
 
 // Custom host and port
-try zh3.serve(&app, .{
+try h3.serve(&app, .{
     .host = "0.0.0.0",
     .port = 8080
 });
 
 // Full configuration
-try zh3.serve(&app, .{
+try h3.serve(&app, .{
     .host = "0.0.0.0",
     .port = 8080,
     .backlog = 256,
@@ -107,19 +107,19 @@ Here's a comprehensive example showing various features:
 
 ```zig
 const std = @import("std");
-const zh3 = @import("zh3");
+const h3 = @import("h3");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var app = zh3.H3.init(allocator);
+    var app = h3.createApp(allocator);
     defer app.deinit();
 
     // Middleware
-    _ = app.use(zh3.utils.logger);
-    _ = app.use(zh3.utils.cors("*"));
+    _ = app.use(h3.middleware.logger);
+    _ = app.use(h3.middleware.cors("*"));
 
     // Routes
     _ = app.get("/", homeHandler);
@@ -131,41 +131,41 @@ pub fn main() !void {
 
     std.log.info("🚀 Server starting on http://127.0.0.1:3000", .{});
 
-    try zh3.serve(&app, .{
+    try h3.serve(&app, .{
         .host = "127.0.0.1",
         .port = 3000,
     });
 }
 
-fn homeHandler(event: *zh3.H3Event) !void {
+fn homeHandler(event: *h3.Event) !void {
     const html =
         \\<!DOCTYPE html>
         \\<html>
-        \\<head><title>ZH3 Server</title></head>
+        \\<head><title>H3 Server</title></head>
         \\<body>
-        \\  <h1>Welcome to ZH3!</h1>
+        \\  <h1>Welcome to H3!</h1>
         \\  <p>Your HTTP server is running.</p>
         \\</body>
         \\</html>
     ;
 
     try event.setHeader("Content-Type", "text/html");
-    try zh3.utils.send(event, html);
+    try h3.sendHtml(event, html);
 }
 
-fn healthHandler(event: *zh3.H3Event) !void {
+fn healthHandler(event: *h3.Event) !void {
     const health = .{
         .status = "healthy",
         .timestamp = std.time.timestamp(),
-        .server = "ZH3",
+        .server = "H3",
     };
 
-    try zh3.utils.sendJsonValue(event, health);
+    try h3.sendJson(event, health);
 }
 
-fn getUserHandler(event: *zh3.H3Event) !void {
-    const user_id = zh3.utils.getParam(event, "id") orelse {
-        try zh3.utils.badRequest(event, "Missing user ID");
+fn getUserHandler(event: *h3.Event) !void {
+    const user_id = h3.getParam(event, "id") orelse {
+        try h3.response.badRequest(event, "Missing user ID");
         return;
     };
 
@@ -175,17 +175,17 @@ fn getUserHandler(event: *zh3.H3Event) !void {
         .email = "john@example.com",
     };
 
-    try zh3.utils.sendJsonValue(event, user);
+    try h3.sendJson(event, user);
 }
 
-fn createUserHandler(event: *zh3.H3Event) !void {
+fn createUserHandler(event: *h3.Event) !void {
     const CreateUserRequest = struct {
         name: []const u8,
         email: []const u8,
     };
 
-    const req = zh3.utils.readJson(event, CreateUserRequest) catch {
-        try zh3.utils.badRequest(event, "Invalid JSON");
+    const req = h3.readJson(event, CreateUserRequest) catch {
+        try h3.response.badRequest(event, "Invalid JSON");
         return;
     };
 
@@ -197,12 +197,12 @@ fn createUserHandler(event: *zh3.H3Event) !void {
     };
 
     event.setStatus(.created);
-    try zh3.utils.sendJsonValue(event, user);
+    try h3.sendJson(event, user);
 }
 
-fn updateUserHandler(event: *zh3.H3Event) !void {
-    const user_id = zh3.utils.getParam(event, "id") orelse {
-        try zh3.utils.badRequest(event, "Missing user ID");
+fn updateUserHandler(event: *h3.Event) !void {
+    const user_id = h3.getParam(event, "id") orelse {
+        try h3.response.badRequest(event, "Missing user ID");
         return;
     };
 
@@ -212,18 +212,18 @@ fn updateUserHandler(event: *zh3.H3Event) !void {
         .updated_at = std.time.timestamp(),
     };
 
-    try zh3.utils.sendJsonValue(event, response);
+    try h3.sendJson(event, response);
 }
 
-fn deleteUserHandler(event: *zh3.H3Event) !void {
-    const user_id = zh3.utils.getParam(event, "id") orelse {
-        try zh3.utils.badRequest(event, "Missing user ID");
+fn deleteUserHandler(event: *h3.Event) !void {
+    const user_id = h3.getParam(event, "id") orelse {
+        try h3.response.badRequest(event, "Missing user ID");
         return;
     };
 
     _ = user_id;
     event.setStatus(.no_content);
-    try zh3.utils.send(event, "");
+    try h3.sendText(event, "");
 }
 ```
 
@@ -337,4 +337,4 @@ pub const Server = struct {
 4. **Deploy** - Run your server in production
 5. **Contribute** - Help improve the HTTP server implementation
 
-The ZH3 HTTP server provides a solid foundation for building web applications and APIs with Zig!
+The H3 HTTP server provides a solid foundation for building web applications and APIs with Zig!

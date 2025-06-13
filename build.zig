@@ -42,14 +42,14 @@ pub fn build(b: *std.Build) void {
     // Modules can depend on one another using the `std.Build.Module.addImport` function.
     // This is what allows Zig source code to use `@import("foo")` where 'foo' is not a
     // file path. In this case, we set up `exe_mod` to import `lib_mod`.
-    exe_mod.addImport("zh3_lib", lib_mod);
+    exe_mod.addImport("h3", lib_mod);
 
     // Now, we will create a static library based on the module we created above.
     // This creates a `std.Build.Step.Compile`, which is the build step responsible
     // for actually invoking the compiler.
     const lib = b.addLibrary(.{
         .linkage = .static,
-        .name = "zh3",
+        .name = "h3",
         .root_module = lib_mod,
     });
 
@@ -61,7 +61,7 @@ pub fn build(b: *std.Build) void {
     // This creates another `std.Build.Step.Compile`, but this one builds an executable
     // rather than a static library.
     const exe = b.addExecutable(.{
-        .name = "zh3",
+        .name = "h3",
         .root_module = exe_mod,
     });
 
@@ -116,6 +116,7 @@ pub fn build(b: *std.Build) void {
 
     // Add examples
     addExample(b, lib_mod, target, optimize, "http_server", "examples/http_server.zig");
+    addExample(b, lib_mod, target, optimize, "simple_server", "examples/simple_server.zig");
 }
 
 fn addExample(
@@ -133,7 +134,7 @@ fn addExample(
         .optimize = optimize,
     });
 
-    example_exe.root_module.addImport("zh3", lib_mod);
+    example_exe.root_module.addImport("h3", lib_mod);
     b.installArtifact(example_exe);
 
     const run_cmd = b.addRunArtifact(example_exe);

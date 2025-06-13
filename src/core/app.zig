@@ -6,9 +6,9 @@ const HttpStatus = @import("../http/status.zig").HttpStatus;
 const H3Event = @import("event.zig").H3Event;
 const Router = @import("router.zig").Router;
 pub const Handler = @import("router.zig").Handler;
-
-/// Middleware function type that takes event and app context
-pub const Middleware = *const fn (*H3Event, *H3, usize, Handler) anyerror!void;
+const interfaces = @import("interfaces.zig");
+pub const Middleware = interfaces.Middleware;
+pub const MiddlewareContext = interfaces.MiddlewareContext;
 
 /// Global hook function types
 pub const OnRequestHook = *const fn (*H3Event) anyerror!void;
@@ -34,8 +34,11 @@ fn executeMiddlewareAtIndex(app: *H3, event: *H3Event, index: usize, final_handl
     // Get current middleware
     const middleware = app.middlewares.items[index];
 
-    // Call the middleware with the current context
-    try middleware(event, app, index + 1, final_handler);
+    // Create middleware context with type safety
+    const context = interfaces.createMiddlewareContext(app);
+
+    // Call the middleware with clean interface
+    try middleware(event, context, index + 1, final_handler);
 }
 
 /// H3 application class
@@ -239,9 +242,9 @@ test "H3.middleware registration" {
     defer app.deinit();
 
     const testMiddleware = struct {
-        fn middleware(event: *H3Event, h3_app: *H3, index: usize, final_handler: Handler) !void {
+        fn middleware(event: *H3Event, context: MiddlewareContext, index: usize, final_handler: Handler) !void {
             // Call next middleware
-            try h3_app.next(event, index, final_handler);
+            try context.next(event, index, final_handler);
         }
     }.middleware;
 
@@ -283,12 +286,12 @@ test "H3.middleware chain execution" {
 
     // First middleware
     const middleware1 = struct {
-        fn middleware(event: *H3Event, h3_app: *H3, index: usize, final_handler: Handler) !void {
+        fn middleware(event: *H3Event, context: MiddlewareContext, index: usize, final_handler: Handler) !void {
             // Get context from event (simplified for test)
             try event.setContext("test", "1");
 
             // Call next middleware
-            try h3_app.next(event, index, final_handler);
+            try context.next(event, index, final_handler);
 
             // Post-processing
             try event.setContext("post1", "done");
@@ -297,11 +300,11 @@ test "H3.middleware chain execution" {
 
     // Second middleware
     const middleware2 = struct {
-        fn middleware(event: *H3Event, h3_app: *H3, index: usize, final_handler: Handler) !void {
+        fn middleware(event: *H3Event, context: MiddlewareContext, index: usize, final_handler: Handler) !void {
             try event.setContext("test2", "2");
 
             // Call next middleware
-            try h3_app.next(event, index, final_handler);
+            try context.next(event, index, final_handler);
 
             try event.setContext("post2", "done");
         }

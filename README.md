@@ -1,4 +1,4 @@
-# ZH3 - Zig HTTP Framework
+# H3 - Zig HTTP Framework
 
 ⚡️ A minimal, fast, and composable HTTP server framework for Zig, inspired by [H3.js](https://h3.dev).
 
@@ -14,12 +14,12 @@
 
 ### Installation
 
-Add ZH3 to your `build.zig.zon`:
+Add H3 to your `build.zig.zon`:
 
 ```zig
 .dependencies = .{
-    .zh3 = .{
-        .url = "https://github.com/your-repo/zh3/archive/main.tar.gz",
+    .h3 = .{
+        .url = "https://github.com/your-repo/h3/archive/main.tar.gz",
         .hash = "...",
     },
 },
@@ -29,7 +29,7 @@ Add ZH3 to your `build.zig.zon`:
 
 ```zig
 const std = @import("std");
-const zh3 = @import("zh3");
+const h3 = @import("h3");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -37,7 +37,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Create H3 app
-    var app = zh3.H3.init(allocator);
+    var app = h3.createApp(allocator);
     defer app.deinit();
 
     // Add routes
@@ -46,29 +46,29 @@ pub fn main() !void {
     _ = app.post("/api/users", createUserHandler);
 
     // Start server
-    try zh3.serve(&app, .{ .port = 3000 });
+    try h3.serve(&app, .{ .port = 3000 });
 }
 
-fn helloHandler(event: *zh3.H3Event) !void {
-    try zh3.utils.send(event, "⚡️ Hello from ZH3!");
+fn helloHandler(event: *h3.Event) !void {
+    try h3.sendText(event, "⚡️ Hello from H3!");
 }
 
-fn getUserHandler(event: *zh3.H3Event) !void {
-    const user_id = zh3.utils.getParam(event, "id") orelse {
-        try zh3.utils.badRequest(event, "Missing user ID");
+fn getUserHandler(event: *h3.Event) !void {
+    const user_id = h3.getParam(event, "id") orelse {
+        try h3.utils.response.badRequest(event, "Missing user ID");
         return;
     };
 
     const user = .{ .id = user_id, .name = "John Doe" };
-    try zh3.utils.sendJsonValue(event, user);
+    try h3.sendJson(event, user);
 }
 
-fn createUserHandler(event: *zh3.H3Event) !void {
+fn createUserHandler(event: *h3.Event) !void {
     const User = struct { name: []const u8 };
-    const user_data = try zh3.utils.readJson(event, User);
+    const user_data = try h3.readJson(event, User);
 
     event.setStatus(.created);
-    try zh3.utils.sendJsonValue(event, .{ .id = 123, .name = user_data.name });
+    try h3.sendJson(event, .{ .id = 123, .name = user_data.name });
 }
 ```
 
@@ -78,7 +78,7 @@ fn createUserHandler(event: *zh3.H3Event) !void {
 
 ```zig
 // Create app
-var app = zh3.H3.init(allocator);
+var app = h3.createApp(allocator);
 defer app.deinit();
 
 // HTTP methods
@@ -100,7 +100,7 @@ _ = app.use(middleware);
 The `H3Event` is the central context object that carries request and response data:
 
 ```zig
-fn handler(event: *zh3.H3Event) !void {
+fn handler(event: *h3.Event) !void {
     // Request info
     const method = event.getMethod();
     const path = event.getPath();
@@ -111,19 +111,19 @@ fn handler(event: *zh3.H3Event) !void {
     try event.setHeader("x-custom", "value");
 
     // Parameters and query
-    const id = event.getParam("id");
-    const page = event.getQuery("page");
+    const id = h3.getParam(event, "id");
+    const page = h3.getQuery(event, "page");
 
     // Body
-    const body = event.readBody();
-    const json_data = try event.readJson(MyStruct);
+    const body = h3.readBody(event);
+    const json_data = try h3.readJson(event, MyStruct);
 
     // Response
     event.setStatus(.ok);
-    try event.sendText("Hello");
-    try event.sendJson("{\"message\": \"Hello\"}");
-    try event.sendJsonValue(.{ .message = "Hello" });
-    try event.redirect("/new-path", .moved_permanently);
+    try h3.sendText(event, "Hello");
+    try h3.sendJson(event, "{\"message\": \"Hello\"}");
+    try h3.sendJson(event, .{ .message = "Hello" });
+    try h3.response.redirect(event, "/new-path", .moved_permanently);
 }
 ```
 
@@ -131,71 +131,71 @@ fn handler(event: *zh3.H3Event) !void {
 
 ```zig
 // Response helpers
-try zh3.utils.send(event, "text");
-try zh3.utils.sendJson(event, json_string);
-try zh3.utils.sendJsonValue(event, struct_or_value);
-try zh3.utils.redirect(event, "/path", .found);
+try h3.sendText(event, "text");
+try h3.sendJson(event, json_string);
+try h3.sendJson(event, struct_or_value);
+try h3.utils.response.redirect(event, "/path", .found);
 
 // Error responses
-try zh3.utils.notFound(event, "Custom message");
-try zh3.utils.badRequest(event, "Invalid input");
-try zh3.utils.unauthorized(event, null);
-try zh3.utils.forbidden(event, null);
-try zh3.utils.internalServerError(event, null);
+try h3.utils.response.notFound(event, "Custom message");
+try h3.utils.response.badRequest(event, "Invalid input");
+try h3.utils.response.unauthorized(event, null);
+try h3.utils.response.forbidden(event, null);
+try h3.utils.response.internalServerError(event, null);
 
 // Request helpers
-const header = zh3.utils.getHeader(event, "content-type");
-const param = zh3.utils.getParam(event, "id");
-const query = zh3.utils.getQuery(event, "page");
-const body = zh3.utils.readBody(event);
-const json = try zh3.utils.readJson(event, MyStruct);
+const header = event.getHeader("content-type");
+const param = h3.getParam(event, "id");
+const query = h3.getQuery(event, "page");
+const body = h3.readBody(event);
+const json = try h3.readJson(event, MyStruct);
 
 // Security and CORS
-try zh3.utils.setCors(event, "*");
-try zh3.utils.setSecurity(event);
-try zh3.utils.setNoCache(event);
+try h3.utils.response.setCors(event, "*");
+try h3.utils.response.setSecurity(event);
+try h3.utils.response.setNoCache(event);
 ```
 
 ### Middleware
 
 ```zig
-fn loggerMiddleware(event: *zh3.H3Event, next: zh3.Handler) !void {
+fn loggerMiddleware(event: *h3.Event, context: h3.MiddlewareContext, index: usize, final_handler: h3.Handler) !void {
     std.log.info("{s} {s}", .{ event.getMethod().toString(), event.getPath() });
-    try next(event);
+    try context.next(event, index, final_handler);
 }
 
-fn corsMiddleware(event: *zh3.H3Event, next: zh3.Handler) !void {
-    try zh3.utils.setCors(event, "*");
+fn corsMiddleware(event: *h3.Event, context: h3.MiddlewareContext, index: usize, final_handler: h3.Handler) !void {
+    try h3.utils.response.setCors(event, "*");
     if (event.getMethod() == .OPTIONS) {
         event.setStatus(.no_content);
         return;
     }
-    try next(event);
+    try context.next(event, index, final_handler);
 }
 
 // Built-in middleware
-_ = app.use(zh3.utils.logger);
-_ = app.use(zh3.utils.cors("*"));
-_ = app.use(zh3.utils.security());
+_ = app.use(h3.middleware.logger);
+_ = app.use(h3.middleware.cors("*"));
+_ = app.use(h3.middleware.security);
 ```
 
 ### Server
 
 ```zig
 // Start server with options
-try zh3.serve(&app, .{
+try h3.serve(&app, .{
     .port = 3000,
     .host = "127.0.0.1",
     .backlog = 128,
 });
 
 // Start with defaults (port 3000)
-try zh3.serveDefault(&app);
+try h3.serve(&app, .{});
 ```
 
 ## Route Patterns
 
-ZH3 supports simple route patterns:
+H3 supports simple route patterns:
 
 - **Exact match**: `/api/users`
 - **Parameters**: `/api/users/:id` (accessible via `event.getParam("id")`)
