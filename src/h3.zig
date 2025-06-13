@@ -33,8 +33,12 @@ const std = @import("std");
 // Re-export core types and functions
 pub const App = @import("core/app.zig").H3;
 pub const Event = @import("core/event.zig").H3Event;
-pub const Handler = @import("core/app.zig").Handler;
-pub const Middleware = @import("core/app.zig").Middleware;
+pub const Handler = @import("core/handler.zig").Handler;
+pub const ContextHandler = @import("core/handler.zig").ContextHandler;
+pub const HandlerRegistry = @import("core/handler.zig").HandlerRegistry;
+pub const Middleware = @import("core/middleware.zig").Middleware;
+pub const MiddlewareChain = @import("core/middleware.zig").MiddlewareChain;
+pub const MiddlewareContext = @import("core/interfaces.zig").MiddlewareContext;
 
 // Re-export HTTP types
 pub const HttpMethod = @import("http/method.zig").HttpMethod;
@@ -48,7 +52,22 @@ pub const serve = @import("server/serve.zig").serve;
 pub const ServeOptions = @import("server/serve.zig").ServeOptions;
 
 // Re-export utility functions
-pub const utils = @import("utils.zig");
+pub const utils = struct {
+    pub const request = @import("utils/request.zig");
+    pub const response = @import("utils/response.zig");
+    pub const middleware = @import("utils/middleware.zig");
+    pub const cookie = @import("utils/cookie.zig");
+    pub const security = @import("utils/security.zig");
+    pub const proxy = @import("utils/proxy.zig");
+    pub const body = @import("utils/body.zig");
+};
+
+// Internal modules
+pub const internal = struct {
+    pub const url = @import("internal/url.zig");
+    pub const mime = @import("internal/mime.zig");
+    pub const patterns = @import("internal/patterns.zig");
+};
 
 // Convenience functions for better API
 /// Create a new H3 application
