@@ -113,4 +113,38 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+
+    // Add examples
+    addExample(b, lib_mod, target, optimize, "http_server", "examples/http_server.zig");
+}
+
+fn addExample(
+    b: *std.Build,
+    lib_mod: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    name: []const u8,
+    path: []const u8,
+) void {
+    const example_exe = b.addExecutable(.{
+        .name = name,
+        .root_source_file = b.path(path),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    example_exe.root_module.addImport("zh3", lib_mod);
+    b.installArtifact(example_exe);
+
+    const run_cmd = b.addRunArtifact(example_exe);
+    run_cmd.step.dependOn(b.getInstallStep());
+
+    if (b.args) |args| {
+        run_cmd.addArgs(args);
+    }
+
+    const run_step_name = b.fmt("run-{s}", .{name});
+    const run_step_desc = b.fmt("Run the {s} example", .{name});
+    const run_step = b.step(run_step_name, run_step_desc);
+    run_step.dependOn(&run_cmd.step);
 }

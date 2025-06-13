@@ -92,7 +92,7 @@ pub fn readJson(event: *const H3Event, comptime T: type) !T {
 
 /// Set CORS headers with default values
 pub fn setCors(event: *H3Event, origin: ?[]const u8) !void {
-    try event.setCors(.{
+    try event.response.setCors(.{
         .origin = origin orelse "*",
         .methods = "GET, POST, PUT, DELETE, PATCH, OPTIONS",
         .headers = "Content-Type, Authorization",
@@ -130,22 +130,24 @@ pub fn logger(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, f
     std.log.info("{s} {s} {} {}ms", .{ event.getMethod().toString(), event.getPath(), event.response.status.code(), duration });
 }
 
-/// Create a CORS middleware
+/// Create a CORS middleware with default origin "*"
+pub fn corsDefault(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
+    try setCors(event, "*");
+
+    // Handle preflight requests
+    if (event.getMethod() == .OPTIONS) {
+        event.setStatus(.no_content);
+        return;
+    }
+
+    // Call next middleware
+    try app.next(event, index, final_handler);
+}
+
+/// Create a CORS middleware factory (simplified - returns a function that uses "*" origin)
 pub fn cors(origin: ?[]const u8) @import("core/app.zig").Middleware {
-    return struct {
-        fn middleware(event: *H3Event, app: *@import("core/app.zig").H3, index: usize, final_handler: @import("core/app.zig").Handler) !void {
-            try setCors(event, origin);
-
-            // Handle preflight requests
-            if (event.getMethod() == .OPTIONS) {
-                event.setStatus(.no_content);
-                return;
-            }
-
-            // Call next middleware
-            try app.next(event, index, final_handler);
-        }
-    }.middleware;
+    _ = origin; // For now, ignore the parameter to avoid closure issues
+    return corsDefault;
 }
 
 /// Create a security headers middleware

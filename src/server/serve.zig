@@ -51,18 +51,48 @@ pub const Server = struct {
     fn handleConnection(self: *Server, connection: std.net.Server.Connection) !void {
         defer connection.stream.close();
 
+        // Read request - use read() instead of readAll() for HTTP
         var buffer: [8192]u8 = undefined;
-        const bytes_read = try connection.stream.readAll(buffer[0..]);
+        var total_read: usize = 0;
 
-        if (bytes_read == 0) return;
+        // Read until we have a complete HTTP request (ends with \r\n\r\n)
+        while (total_read < buffer.len - 1) {
+            const bytes_read = connection.stream.read(buffer[total_read..]) catch |err| {
+                std.log.err("Failed to read request: {}", .{err});
+                return;
+            };
 
-        const request_data = buffer[0..bytes_read];
+            if (bytes_read == 0) break; // Connection closed
 
-        // Parse HTTP request (simplified)
+            total_read += bytes_read;
+
+            // Check if we have a complete HTTP request
+            if (total_read >= 4) {
+                const data = buffer[0..total_read];
+                if (std.mem.indexOf(u8, data, "\r\n\r\n") != null) {
+                    break; // Found end of headers
+                }
+            }
+        }
+
+        if (total_read == 0) {
+            std.log.warn("Received empty request", .{});
+            return;
+        }
+
+        const request_data = buffer[0..total_read];
+
+        // Parse HTTP request
         var event = H3Event.init(self.allocator);
         defer event.deinit();
 
-        try self.parseHttpRequest(&event, request_data);
+        self.parseHttpRequest(&event, request_data) catch |err| {
+            std.log.err("Failed to parse request: {}", .{err});
+            event.setStatus(.bad_request);
+            try event.sendText("Bad Request");
+            try self.sendHttpResponse(connection.stream, &event);
+            return;
+        };
 
         // Handle the request
         self.app.handle(&event) catch |err| {
@@ -72,33 +102,46 @@ pub const Server = struct {
         };
 
         // Send response
-        try self.sendHttpResponse(connection.stream, &event);
+        self.sendHttpResponse(connection.stream, &event) catch |err| {
+            std.log.err("Failed to send response: {}", .{err});
+        };
     }
 
     /// Parse HTTP request from raw data
     fn parseHttpRequest(self: *Server, event: *H3Event, data: []const u8) !void {
         _ = self;
 
+        // Debug: log the raw request
+        std.log.debug("Raw request data: {s}", .{data});
+
         var lines = std.mem.splitSequence(u8, data, "\r\n");
 
         // Parse request line
         if (lines.next()) |request_line| {
+            std.log.debug("Request line: {s}", .{request_line});
+
             var parts = std.mem.splitSequence(u8, request_line, " ");
 
             // Method
             if (parts.next()) |method_str| {
                 event.request.method = HttpMethod.fromString(method_str) orelse .GET;
+                std.log.debug("Method: {s}", .{method_str});
             }
 
             // URL
             if (parts.next()) |url| {
                 try event.request.parseUrl(url);
+                std.log.debug("URL: {s}", .{url});
             }
 
-            // Version
+            // Version (default to HTTP/1.1 if not specified)
             if (parts.next()) |version| {
                 event.request.version = version;
+            } else {
+                event.request.version = "HTTP/1.1";
             }
+        } else {
+            return error.InvalidRequestLine;
         }
 
         // Parse headers
@@ -109,18 +152,38 @@ pub const Server = struct {
                 const name = std.mem.trim(u8, line[0..colon_pos], " \t");
                 const value = std.mem.trim(u8, line[colon_pos + 1 ..], " \t");
                 try event.request.setHeader(name, value);
+                std.log.debug("Header: {s}: {s}", .{ name, value });
             }
         }
 
         // Parse body (if any)
-        if (lines.rest().len > 0) {
-            event.request.body = lines.rest();
+        const remaining = lines.rest();
+        if (remaining.len > 0) {
+            event.request.body = remaining;
+            std.log.debug("Body length: {d}", .{remaining.len});
         }
+
+        // Parse query parameters
+        try event.parseQuery();
     }
 
     /// Send HTTP response
     fn sendHttpResponse(self: *Server, stream: std.net.Stream, event: *H3Event) !void {
         _ = self;
+
+        // Ensure we have a response body
+        const body = event.response.body orelse "";
+
+        // Content-Length should already be set by response methods like setJson, setText, etc.
+        // If not set, set it now
+        if (event.response.getHeader("content-length") == null) {
+            try event.response.setContentLength(body.len);
+        }
+
+        // Set Connection: close to ensure proper connection handling
+        if (event.response.getHeader("connection") == null) {
+            try event.response.setHeader("Connection", "close");
+        }
 
         var response_buffer: [8192]u8 = undefined;
         var fbs = std.io.fixedBufferStream(response_buffer[0..]);
@@ -139,16 +202,21 @@ pub const Server = struct {
             try writer.print("{s}: {s}\r\n", .{ entry.key_ptr.*, entry.value_ptr.* });
         }
 
-        // Empty line
+        // Empty line to separate headers from body
         try writer.writeAll("\r\n");
 
         // Body
-        if (event.response.body) |body| {
+        if (body.len > 0) {
             try writer.writeAll(body);
         }
 
-        // Send response
-        try stream.writeAll(fbs.getWritten());
+        // Send the complete response
+        const response_data = fbs.getWritten();
+        try stream.writeAll(response_data);
+
+        // Ensure data is flushed to the network
+        // Note: Zig's std.net.Stream doesn't have a flush method,
+        // but writeAll should handle this
     }
 };
 

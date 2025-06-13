@@ -75,8 +75,8 @@ pub const Response = struct {
 
     /// Set the Content-Length header
     pub fn setContentLength(self: *Response, length: usize) !void {
-        var buf: [32]u8 = undefined;
-        const length_str = try std.fmt.bufPrint(buf[0..], "{d}", .{length});
+        // Allocate persistent memory for the content-length string
+        const length_str = try std.fmt.allocPrint(self.allocator, "{d}", .{length});
         try self.setHeader(HeaderNames.CONTENT_LENGTH, length_str);
     }
 
