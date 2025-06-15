@@ -167,45 +167,54 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 30);
     }
 
-    // Initialize Prism.js when it's loaded
-    if (typeof Prism !== 'undefined') {
-        // Configure Prism.js
-        Prism.plugins.autoloader.languages_path = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
-
-        // Add custom language definitions if needed
-        if (Prism.languages.zig) {
-            // Zig is already supported
-        } else {
-            // Define basic Zig syntax highlighting
-            Prism.languages.zig = {
-                'comment': [
-                    {
-                        pattern: /(^|[^\\])\/\*[\s\S]*?(?:\*\/|$)/,
-                        lookbehind: true
-                    },
-                    {
-                        pattern: /(^|[^\\:])\/\/.*/,
-                        lookbehind: true
-                    }
-                ],
-                'string': {
-                    pattern: /(["'])(?:\\(?:\r\n|[\s\S])|(?!\1)[^\\\r\n])*\1/,
-                    greedy: true
-                },
-                'keyword': /\b(?:const|var|fn|pub|try|catch|if|else|while|for|switch|return|defer|errdefer|unreachable|break|continue|struct|enum|union|error|test|comptime|inline|export|extern|packed|align|volatile|allowzero|noalias)\b/,
-                'builtin': /\b(?:u8|u16|u32|u64|u128|i8|i16|i32|i64|i128|f16|f32|f64|f128|bool|void|type|anytype|anyopaque|noreturn|c_short|c_ushort|c_int|c_uint|c_long|c_ulong|c_longlong|c_ulonglong|c_longdouble|c_void|comptime_int|comptime_float)\b/,
-                'function': /\b[a-zA-Z_]\w*(?=\s*\()/,
-                'number': /\b(?:0[xX][\da-fA-F]+(?:\.[\da-fA-F]*)?(?:[pP][+-]?\d+)?|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)\b/,
-                'boolean': /\b(?:true|false|null|undefined)\b/,
-                'operator': /[+\-*\/%=!<>&|^~?:@]/,
-                'punctuation': /[{}[\];(),.]/
-            };
-        }
-
-        // Re-highlight all code blocks
-        Prism.highlightAll();
-    }
+    // Initialize Prism.js and define Zig language
+    initializePrism();
 });
+
+// Define Zig language for Prism.js and initialize highlighting
+function initializePrism() {
+    // Wait for Prism to be available
+    if (typeof Prism === 'undefined') {
+        setTimeout(initializePrism, 100);
+        return;
+    }
+
+    // Define Zig language syntax highlighting
+    Prism.languages.zig = {
+        'comment': [
+            {
+                pattern: /(^|[^\\])\/\*[\s\S]*?(?:\*\/|$)/,
+                lookbehind: true
+            },
+            {
+                pattern: /(^|[^\\:])\/\/.*/,
+                lookbehind: true
+            }
+        ],
+        'string': [
+            {
+                pattern: /\\\\[^\\]*\\\\/,
+                greedy: true
+            },
+            {
+                pattern: /(["'])(?:\\(?:\r\n|[\s\S])|(?!\1)[^\\\r\n])*\1/,
+                greedy: true
+            }
+        ],
+        'keyword': /\b(?:const|var|fn|pub|try|catch|if|else|while|for|switch|return|defer|errdefer|unreachable|break|continue|struct|enum|union|error|test|comptime|inline|export|extern|packed|align|volatile|allowzero|noalias|async|await|suspend|resume|nosuspend|threadlocal)\b/,
+        'builtin': /\b(?:u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f16|f32|f64|f128|bool|void|type|anytype|anyopaque|anyerror|noreturn|c_short|c_ushort|c_int|c_uint|c_long|c_ulong|c_longlong|c_ulonglong|c_longdouble|c_void|comptime_int|comptime_float)\b/,
+        'function': /\b[a-zA-Z_]\w*(?=\s*\()/,
+        'number': /\b(?:0[xX][\da-fA-F]+(?:\.[\da-fA-F]*)?(?:[pP][+-]?\d+)?|0[oO][0-7]+|0[bB][01]+|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)\b/,
+        'boolean': /\b(?:true|false|null|undefined)\b/,
+        'operator': /[+\-*\/%=!<>&|^~?:@]/,
+        'punctuation': /[{}[\];(),.]/,
+        'property': /\b[a-zA-Z_]\w*(?=\s*:)/,
+        'attribute': /@[a-zA-Z_]\w*/
+    };
+
+    // Highlight all code blocks
+    Prism.highlightAll();
+}
 
 // Add CSS animations
 const style = document.createElement('style');
