@@ -133,8 +133,7 @@ fn homeHandler(event: *h3.Event) !void {
         \\</html>
     ;
 
-    try event.setHeader("Content-Type", "text/html; charset=utf-8");
-    try h3.sendText(event, html);
+    try h3.sendHtml(event, html);
 }
 
 fn healthHandler(event: *h3.Event) !void {
