@@ -30,7 +30,7 @@
 
 const std = @import("std");
 
-// Re-export core types and functions
+// Re-export core types and functions (Legacy API)
 pub const App = @import("core/app.zig").H3;
 pub const H3 = @import("core/app.zig").H3; // Alias for App
 pub const Event = @import("core/event.zig").H3Event;
@@ -41,6 +41,30 @@ pub const Middleware = @import("core/middleware.zig").Middleware;
 pub const MiddlewareChain = @import("core/middleware.zig").MiddlewareChain;
 pub const MiddlewareContext = @import("core/interfaces.zig").MiddlewareContext;
 pub const Route = @import("core/router.zig").Route;
+
+// New component-based architecture (v2.0)
+pub const H3App = @import("core/app.zig").H3App;
+pub const createDevApp = @import("core/app.zig").createDevApp;
+
+// Configuration system
+pub const config = @import("core/config.zig");
+pub const H3Config = config.H3Config;
+pub const MemoryConfig = config.MemoryConfig;
+pub const RouterConfig = config.RouterConfig;
+pub const MiddlewareConfig = config.MiddlewareConfig;
+pub const SecurityConfig = config.SecurityConfig;
+pub const MonitoringConfig = config.MonitoringConfig;
+pub const ConfigBuilder = config.ConfigBuilder;
+
+// Memory management
+pub const MemoryManager = @import("core/memory_manager.zig").MemoryManager;
+pub const MemoryStats = @import("core/memory_manager.zig").MemoryStats;
+
+// Component system
+pub const component = @import("core/component.zig");
+pub const Component = component.Component;
+pub const ComponentRegistry = component.ComponentRegistry;
+pub const ComponentState = component.ComponentState;
 
 // Re-export performance optimizations
 pub const EventPool = @import("core/event_pool.zig").EventPool;
@@ -94,20 +118,30 @@ pub fn createApp(allocator: std.mem.Allocator) App {
     return App.init(allocator);
 }
 
-/// Create a new H3 application with performance optimizations
+/// Create a new H3 application with performance optimizations (Legacy)
 pub fn createFastApp(allocator: std.mem.Allocator) App {
-    const config = @import("core/app.zig").H3Config{
+    const app_config = @import("core/app.zig").H3Config{
         .use_event_pool = true,
         .event_pool_size = 200,
         .use_fast_middleware = true,
         .enable_route_compilation = true,
     };
-    return App.initWithConfig(allocator, config);
+    return App.initWithConfig(allocator, app_config);
 }
 
-/// Create a new H3 application with custom configuration
-pub fn createAppWithConfig(allocator: std.mem.Allocator, config: @import("core/app.zig").H3Config) App {
-    return App.initWithConfig(allocator, config);
+/// Create a new H3 application with custom configuration (Legacy)
+pub fn createAppWithConfig(allocator: std.mem.Allocator, app_config: @import("core/app.zig").H3Config) App {
+    return App.initWithConfig(allocator, app_config);
+}
+
+/// Create a new H3 application with component architecture (v2.0)
+pub fn createComponentApp(allocator: std.mem.Allocator) !H3App {
+    return H3App.init(allocator);
+}
+
+/// Create a production-ready H3 application with all optimizations (v2.0)
+pub fn createProductionApp(allocator: std.mem.Allocator) !H3App {
+    return @import("core/app.zig").createFastApp(allocator);
 }
 
 /// Send a text response

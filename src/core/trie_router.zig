@@ -45,11 +45,23 @@ pub const TrieNode = struct {
     }
 
     pub fn deinit(self: *TrieNode) void {
-        // Recursively deinit children
-        var iter = self.children.iterator();
-        while (iter.next()) |entry| {
-            entry.value_ptr.*.deinit();
+        if (self.children.count() > 0) {
+            var keys_to_remove = std.ArrayList([]const u8).init(self.allocator);
+            defer keys_to_remove.deinit();
+
+            var iter = self.children.iterator();
+            while (iter.next()) |entry| {
+                keys_to_remove.append(entry.key_ptr.*) catch {};
+            }
+
+            for (keys_to_remove.items) |key| {
+                if (self.children.get(key)) |child| {
+                    child.deinit();
+                    _ = self.children.remove(key);
+                }
+            }
         }
+
         self.children.deinit();
 
         if (self.param_child) |child| {

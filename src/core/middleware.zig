@@ -129,9 +129,6 @@ pub const Composer = struct {
                 _ = context;
                 _ = index;
 
-                // Get the composed middleware from event context (this is a simplified approach)
-                // In a real implementation, you'd need a way to access the chain
-                // For now, just call the final handler
                 try final_handler(event);
             }
         };
@@ -141,8 +138,6 @@ pub const Composer = struct {
             try chain.use(mw);
         }
 
-        // This is a simplified implementation
-        // In practice, you'd need a more sophisticated way to handle composed middleware
         return Middleware.init(ComposedMiddleware.middleware);
     }
 
@@ -168,10 +163,7 @@ test "MiddlewareChain basic functionality" {
     var chain = MiddlewareChain.init(testing.allocator);
     defer chain.deinit();
 
-    // Test empty chain
     try testing.expect(chain.count() == 0);
-
-    // Add middleware
     const testMiddleware = Middleware.init(struct {
         fn middleware(event: *H3Event, context: interfaces.MiddlewareContext, index: usize, final_handler: Handler) !void {
             try context.next(event, index, final_handler);
@@ -190,19 +182,14 @@ test "Middleware execution order" {
     var chain = MiddlewareChain.init(testing.allocator);
     defer chain.deinit();
 
-    // Create test middlewares that record execution order
     const TestMiddleware1 = struct {
         fn middleware(event: *H3Event, context: interfaces.MiddlewareContext, index: usize, final_handler: Handler) !void {
-            // Record execution
-            // try execution_order.append(1);
             try context.next(event, index, final_handler);
         }
     };
 
     const TestMiddleware2 = struct {
         fn middleware(event: *H3Event, context: interfaces.MiddlewareContext, index: usize, final_handler: Handler) !void {
-            // Record execution
-            // try execution_order.append(2);
             try context.next(event, index, final_handler);
         }
     };

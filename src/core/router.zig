@@ -1,10 +1,16 @@
 //! Ultra-high-performance router with Trie, LRU cache, and compile-time optimizations
+//! Now implemented as a decoupled component
 
 const std = @import("std");
 const HttpMethod = @import("../http/method.zig").HttpMethod;
 const H3Event = @import("event.zig").H3Event;
 const TrieRouter = @import("trie_router.zig").TrieRouter;
 const RouteCache = @import("route_cache.zig").RouteCache;
+const config = @import("config.zig");
+const component = @import("component.zig");
+const Component = component.Component;
+const BaseComponent = component.BaseComponent;
+const ComponentContext = component.ComponentContext;
 
 /// Handler function type
 pub const Handler = *const fn (*H3Event) anyerror!void;
@@ -94,7 +100,7 @@ pub const Route = struct {
     method: HttpMethod,
     pattern: []const u8,
     handler: Handler,
-    compiled_pattern: ?CompiledPattern = null,
+    compiled_pattern: ?CompiledPattern,
 
     pub fn compile(self: *Route, allocator: std.mem.Allocator) !void {
         self.compiled_pattern = try CompiledPattern.compile(allocator, self.pattern);
@@ -136,7 +142,9 @@ pub const CompiledPattern = struct {
     }
 
     pub fn deinit(self: *CompiledPattern) void {
-        self.allocator.free(self.segments);
+        if (self.segments.len > 0) {
+            self.allocator.free(self.segments);
+        }
     }
 
     pub fn match(self: *const CompiledPattern, path: []const u8, params: *RouteParams) bool {
@@ -196,10 +204,11 @@ pub const Router = struct {
     config: RouterConfig,
 
     const RouterConfig = struct {
-        enable_cache: bool = true,
+        enable_cache: bool = false,
         cache_size: usize = 1000,
-        enable_trie: bool = false, // Disable by default for compatibility
+        enable_trie: bool = false,
         enable_compile_time_optimization: bool = true,
+        enable_route_compilation: bool = true,
     };
 
     /// Initialize a new ultra-high-performance router
@@ -208,7 +217,7 @@ pub const Router = struct {
     }
 
     /// Initialize router with custom configuration
-    pub fn initWithConfig(allocator: std.mem.Allocator, config: RouterConfig) Router {
+    pub fn initWithConfig(allocator: std.mem.Allocator, router_config: RouterConfig) Router {
         var method_routes: [std.meta.fields(HttpMethod).len]std.ArrayList(Route) = undefined;
 
         inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
@@ -217,18 +226,20 @@ pub const Router = struct {
 
         return Router{
             .trie_router = TrieRouter.init(allocator) catch unreachable,
-            .route_cache = RouteCache.init(allocator, config.cache_size),
+            .route_cache = RouteCache.init(allocator, router_config.cache_size),
             .method_routes = method_routes,
             .params_pool = RouteParamsPool.init(allocator, 200), // Larger pool
             .allocator = allocator,
-            .config = config,
+            .config = router_config,
         };
     }
 
     /// Deinitialize the router
     pub fn deinit(self: *Router) void {
         self.trie_router.deinit();
-        self.route_cache.deinit();
+        if (self.config.enable_cache) {
+            self.route_cache.deinit();
+        }
 
         inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
             for (self.method_routes[i].items) |*route| {
@@ -250,14 +261,16 @@ pub const Router = struct {
             try self.trie_router.addRoute(method, pattern, handler);
         }
 
-        // Add to legacy router for compatibility
         var route = Route{
             .method = method,
             .pattern = pattern,
             .handler = handler,
+            .compiled_pattern = null,
         };
 
-        try route.compile(self.allocator);
+        if (self.config.enable_route_compilation) {
+            try route.compile(self.allocator);
+        }
         try self.method_routes[method_index].append(route);
     }
 
@@ -432,6 +445,97 @@ pub const Router = struct {
             count += self.method_routes[i].items.len;
         }
         return count;
+    }
+};
+
+/// Component-based router implementation
+pub const RouterComponent = struct {
+    base: BaseComponent(RouterComponent, config.RouterConfig),
+    router: Router,
+
+    const Self = @This();
+
+    /// Create a new router component
+    pub fn init(allocator: std.mem.Allocator, router_config: config.RouterConfig) Self {
+        return Self{
+            .base = .{
+                .component_config = router_config,
+                .name = "router",
+            },
+            .router = Router.initWithConfig(allocator, Router.RouterConfig{
+                .enable_cache = router_config.enable_cache,
+                .cache_size = router_config.cache_size,
+                .enable_trie = router_config.enable_trie,
+                .enable_compile_time_optimization = router_config.enable_compile_time_optimization,
+                .enable_route_compilation = router_config.enable_route_compilation,
+            }),
+        };
+    }
+
+    /// Component initialization implementation
+    pub fn initImpl(self: *Self, context: *ComponentContext) !void {
+        _ = self;
+        _ = context;
+        // Router is already initialized in init()
+    }
+
+    /// Component deinitialization implementation
+    pub fn deinitImpl(self: *Self) void {
+        self.router.deinit();
+    }
+
+    /// Component start implementation
+    pub fn startImpl(self: *Self) !void {
+        _ = self;
+        // Router doesn't need explicit start
+    }
+
+    /// Component stop implementation
+    pub fn stopImpl(self: *Self) !void {
+        _ = self;
+        // Router doesn't need explicit stop
+    }
+
+    /// Handle configuration updates
+    pub fn configUpdated(self: *Self) !void {
+        // For now, configuration changes require restart
+        // In the future, we could implement hot-reloading
+        _ = self;
+    }
+
+    /// Get the underlying router
+    pub fn getRouter(self: *Self) *Router {
+        return &self.router;
+    }
+
+    /// Add a route through the component
+    pub fn addRoute(self: *Self, method: HttpMethod, pattern: []const u8, handler: Handler) !void {
+        return self.router.addRoute(method, pattern, handler);
+    }
+
+    /// Find a route through the component
+    pub fn findRoute(self: *Self, method: HttpMethod, path: []const u8) ?RouteMatch {
+        return self.router.findRoute(method, path);
+    }
+
+    /// Release route match resources
+    pub fn releaseMatch(self: *Self, match: RouteMatch) void {
+        self.router.releaseMatch(match);
+    }
+
+    /// Get route count
+    pub fn getRouteCount(self: *const Self) usize {
+        return self.router.getRouteCount();
+    }
+
+    /// Clear all routes
+    pub fn clear(self: *Self) void {
+        self.router.clear();
+    }
+
+    /// Get component interface
+    pub fn component(self: *Self) Component {
+        return self.base.component();
     }
 };
 

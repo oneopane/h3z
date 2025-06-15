@@ -4,7 +4,7 @@
 const std = @import("std");
 const H3Event = @import("event.zig").H3Event;
 
-/// Simple middleware function signature - much cleaner than the complex version
+/// Fast middleware function signature for zero-overhead execution
 pub const FastMiddleware = *const fn (*H3Event) anyerror!void;
 
 /// Handler function signature
@@ -17,13 +17,10 @@ pub const MiddlewareResult = enum {
     error_occurred,
 };
 
-/// Ultra-fast middleware chain with zero-allocation execution
+/// High-performance middleware chain with zero-allocation execution
 pub const FastMiddlewareChain = struct {
-    // Use fixed-size array for better cache locality and zero allocations
     middlewares: [32]FastMiddleware,
     count: u8 = 0,
-
-    // Pre-allocated execution context to avoid allocations
     execution_context: ExecutionContext,
 
     const ExecutionContext = struct {
@@ -38,7 +35,6 @@ pub const FastMiddlewareChain = struct {
         }
     };
 
-    /// Initialize a new ultra-fast middleware chain
     pub fn init() FastMiddlewareChain {
         return FastMiddlewareChain{
             .middlewares = [_]FastMiddleware{undefined} ** 32,
@@ -46,12 +42,11 @@ pub const FastMiddlewareChain = struct {
         };
     }
 
-    /// No deinitialization needed - zero allocations
     pub fn deinit(self: *FastMiddlewareChain) void {
         _ = self;
     }
 
-    /// Add a middleware to the chain (compile-time bounded)
+    /// Add middleware to the chain (max 32 middlewares)
     pub fn use(self: *FastMiddlewareChain, middleware: FastMiddleware) !void {
         if (self.count >= 32) {
             return error.TooManyMiddlewares;
@@ -60,17 +55,15 @@ pub const FastMiddlewareChain = struct {
         self.count += 1;
     }
 
-    /// Execute the middleware chain with ultra-fast zero-allocation execution
+    /// Execute the middleware chain
     pub fn execute(self: *FastMiddlewareChain, event: *H3Event, final_handler: Handler) !void {
         self.execution_context.reset();
 
-        // Fast path: no middlewares
         if (self.count == 0) {
             try final_handler(event);
             return;
         }
 
-        // Ultra-fast loop with minimal overhead
         var i: u8 = 0;
         while (i < self.count) : (i += 1) {
             self.middlewares[i](event) catch |err| {
@@ -79,14 +72,12 @@ pub const FastMiddlewareChain = struct {
                 return err;
             };
 
-            // Check for early termination (response already sent)
             if (event.response.finished) {
                 self.execution_context.early_return = true;
                 return;
             }
         }
 
-        // Execute final handler if no middleware terminated early
         try final_handler(event);
     }
 

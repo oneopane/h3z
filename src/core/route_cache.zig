@@ -96,19 +96,19 @@ pub const RouteCache = struct {
     }
 
     pub fn deinit(self: *RouteCache) void {
-        // Clean up cache entries
-        var cache_iter = self.cache.iterator();
-        while (cache_iter.next()) |entry| {
-            entry.value_ptr.deinit();
-        }
-        self.cache.deinit();
+        // Manually clean up without using iterators to avoid alignment issues
 
-        // Clean up LRU nodes
-        var lru_iter = self.lru_map.iterator();
-        while (lru_iter.next()) |entry| {
-            self.allocator.destroy(entry.value_ptr.*);
+        // Clean up LRU linked list
+        var current = self.head;
+        while (current) |node| {
+            const next = node.next;
+            self.allocator.destroy(node);
+            current = next;
         }
-        self.lru_map.deinit();
+
+        // Clear the maps without iterating
+        self.cache.clearAndFree();
+        self.lru_map.clearAndFree();
     }
 
     /// Get cached route result
