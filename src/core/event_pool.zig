@@ -36,9 +36,11 @@ pub const EventPool = struct {
     pub fn acquire(self: *EventPool) !*H3Event {
         if (self.events.items.len > 0) {
             const event = self.events.pop();
-            event.reset();
-            self.reuse_count += 1;
-            return event;
+            if (event) |e| {
+                e.reset();
+                self.reuse_count += 1;
+                return e;
+            }
         }
 
         // Create new event if pool is empty
@@ -71,9 +73,10 @@ pub const EventPool = struct {
             .max_size = self.max_size,
             .created_count = self.created_count,
             .reuse_count = self.reuse_count,
-            .reuse_ratio = if (self.created_count > 0) 
+            .reuse_ratio = if (self.created_count > 0)
                 @as(f64, @floatFromInt(self.reuse_count)) / @as(f64, @floatFromInt(self.created_count + self.reuse_count))
-                else 0.0,
+            else
+                0.0,
         };
     }
 
@@ -86,7 +89,7 @@ pub const EventPool = struct {
     /// Warm up the pool by pre-allocating events
     pub fn warmUp(self: *EventPool, count: usize) !void {
         const actual_count = @min(count, self.max_size);
-        
+
         for (0..actual_count) |_| {
             const event = try self.allocator.create(H3Event);
             event.* = H3Event.init(self.allocator);
@@ -122,7 +125,7 @@ var global_pool_mutex: std.Thread.Mutex = .{};
 pub fn initGlobalPool(allocator: std.mem.Allocator, max_size: usize) void {
     global_pool_mutex.lock();
     defer global_pool_mutex.unlock();
-    
+
     if (global_pool == null) {
         global_pool = EventPool.init(allocator, max_size);
     }
@@ -132,7 +135,7 @@ pub fn initGlobalPool(allocator: std.mem.Allocator, max_size: usize) void {
 pub fn deinitGlobalPool() void {
     global_pool_mutex.lock();
     defer global_pool_mutex.unlock();
-    
+
     if (global_pool) |*pool| {
         pool.deinit();
         global_pool = null;
@@ -143,7 +146,7 @@ pub fn deinitGlobalPool() void {
 pub fn acquireGlobal() !*H3Event {
     global_pool_mutex.lock();
     defer global_pool_mutex.unlock();
-    
+
     if (global_pool) |*pool| {
         return pool.acquire();
     }
@@ -154,7 +157,7 @@ pub fn acquireGlobal() !*H3Event {
 pub fn releaseGlobal(event: *H3Event) void {
     global_pool_mutex.lock();
     defer global_pool_mutex.unlock();
-    
+
     if (global_pool) |*pool| {
         pool.release(event);
     }
@@ -189,7 +192,7 @@ test "EventPool warm up" {
 
     const event = try pool.acquire();
     try std.testing.expectEqual(@as(usize, 4), pool.events.items.len);
-    
+
     pool.release(event);
     try std.testing.expectEqual(@as(usize, 5), pool.events.items.len);
 }

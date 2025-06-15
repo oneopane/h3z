@@ -61,8 +61,10 @@ pub const RouteParamsPool = struct {
     pub fn acquire(self: *RouteParamsPool) !*RouteParams {
         if (self.pool.items.len > 0) {
             const params = self.pool.pop();
-            params.reset();
-            return params;
+            if (params) |p| {
+                p.reset();
+                return p;
+            }
         }
 
         const params = try self.allocator.create(RouteParams);
