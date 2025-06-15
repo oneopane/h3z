@@ -97,32 +97,40 @@ pub const Response = struct {
     /// Set response body as text
     pub fn setText(self: *Response, text: []const u8) !void {
         self.body = text;
-        try self.setContentType(MimeTypes.TEXT_PLAIN);
+        try self.setHeader(HeaderNames.CONTENT_TYPE, "text/plain; charset=utf-8");
         try self.setContentLength(text.len);
     }
 
     /// Set response body as HTML
     pub fn setHtml(self: *Response, html: []const u8) !void {
         self.body = html;
-        try self.setContentType(MimeTypes.TEXT_HTML);
+        try self.setHeader(HeaderNames.CONTENT_TYPE, "text/html; charset=utf-8");
         try self.setContentLength(html.len);
     }
 
     /// Set response body as JSON
     pub fn setJson(self: *Response, json: []const u8) !void {
         self.body = json;
-        try self.setContentType(MimeTypes.APPLICATION_JSON);
+        try self.setHeader(HeaderNames.CONTENT_TYPE, "application/json; charset=utf-8");
         try self.setContentLength(json.len);
     }
 
     /// Set response body as JSON from a struct
     pub fn setJsonValue(self: *Response, value: anytype) !void {
-        // Use stack buffer for JSON serialization
-        var buf: [1024]u8 = undefined;
-        var stream = std.io.fixedBufferStream(buf[0..]);
-        try std.json.stringify(value, .{}, stream.writer());
-        const json_str = stream.getWritten();
-        try self.setJson(json_str);
+        // Use allocator for dynamic JSON serialization to avoid buffer size limits
+        const json_str = try std.json.stringifyAlloc(self.allocator, value, .{});
+        defer self.allocator.free(json_str);
+
+        // Set proper JSON content type with UTF-8 charset
+        try self.setHeader(HeaderNames.CONTENT_TYPE, "application/json; charset=utf-8");
+
+        // Copy JSON string to response body
+        const body_copy = try self.allocator.dupe(u8, json_str);
+        if (self.body) |old_body| {
+            self.allocator.free(old_body);
+        }
+        self.body = body_copy;
+        try self.setContentLength(body_copy.len);
     }
 
     /// Set a redirect response
@@ -266,7 +274,7 @@ test "Response.setText" {
 
     try response.setText("Hello, World!");
     try std.testing.expectEqualStrings("Hello, World!", response.body.?);
-    try std.testing.expectEqualStrings("text/plain", response.getHeader("content-type").?);
+    try std.testing.expectEqualStrings("text/plain; charset=utf-8", response.getHeader("content-type").?);
 }
 
 test "Response.redirect" {
