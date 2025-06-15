@@ -280,6 +280,14 @@ body {
     font-size: 0.875rem;
     line-height: 1.6;
     color: #e2e8f0;
+    background: transparent !important;
+}
+
+.code-content pre code {
+    background: transparent !important;
+    color: inherit;
+    font-size: inherit;
+    font-family: inherit;
 }
 
 /* Features Section */
@@ -394,6 +402,19 @@ body {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.875rem;
     overflow-x: auto;
+    position: relative;
+}
+
+.code-block pre {
+    margin: 0;
+    background: transparent !important;
+}
+
+.code-block code {
+    background: transparent !important;
+    color: inherit;
+    font-size: inherit;
+    font-family: inherit;
 }
 
 /* Footer */
@@ -514,6 +535,88 @@ body {
         grid-template-columns: 1fr;
         gap: 1.5rem;
     }
+}
+
+/* Prism.js Custom Styling */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+    color: #6b7280;
+    font-style: italic;
+}
+
+.token.punctuation {
+    color: #e2e8f0;
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol,
+.token.deleted {
+    color: #f59e0b;
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin,
+.token.inserted {
+    color: #10b981;
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string {
+    color: #3b82f6;
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+    color: #8b5cf6;
+}
+
+.token.function,
+.token.class-name {
+    color: #f59e0b;
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+    color: #ef4444;
+}
+
+/* Copy button styling */
+.copy-to-clipboard-button {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: rgba(59, 130, 246, 0.8);
+    color: white;
+    border: none;
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.code-block:hover .copy-to-clipboard-button,
+.code-window:hover .copy-to-clipboard-button {
+    opacity: 1;
+}
+
+.copy-to-clipboard-button:hover {
+    background: rgba(59, 130, 246, 1);
 }
 
 /* Smooth scrolling */

@@ -72,26 +72,19 @@ document.addEventListener('DOMContentLoaded', function() {
         observer.observe(step);
     });
     
-    // Copy code functionality
-    const codeBlocks = document.querySelectorAll('.code-block');
+    // Enhanced code block interactions
+    const codeBlocks = document.querySelectorAll('.code-block, .code-window');
     codeBlocks.forEach(block => {
-        block.addEventListener('click', function() {
-            const code = this.textContent;
-            navigator.clipboard.writeText(code).then(() => {
-                // Show feedback
-                const originalBg = this.style.backgroundColor;
-                this.style.backgroundColor = '#10b981';
-                this.style.transition = 'background-color 0.2s ease';
-                
-                setTimeout(() => {
-                    this.style.backgroundColor = originalBg;
-                }, 1000);
-            });
+        // Add hover effects
+        block.addEventListener('mouseenter', function() {
+            this.style.transform = 'translateY(-2px)';
+            this.style.boxShadow = '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 10px 10px -5px rgb(0 0 0 / 0.04)';
         });
-        
-        // Add cursor pointer to indicate clickable
-        block.style.cursor = 'pointer';
-        block.title = 'Click to copy';
+
+        block.addEventListener('mouseleave', function() {
+            this.style.transform = 'translateY(0)';
+            this.style.boxShadow = 'var(--shadow-lg)';
+        });
     });
     
     // Add typing animation to hero code
@@ -172,6 +165,45 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             element.textContent = Math.floor(current) + suffix;
         }, 30);
+    }
+
+    // Initialize Prism.js when it's loaded
+    if (typeof Prism !== 'undefined') {
+        // Configure Prism.js
+        Prism.plugins.autoloader.languages_path = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
+
+        // Add custom language definitions if needed
+        if (Prism.languages.zig) {
+            // Zig is already supported
+        } else {
+            // Define basic Zig syntax highlighting
+            Prism.languages.zig = {
+                'comment': [
+                    {
+                        pattern: /(^|[^\\])\/\*[\s\S]*?(?:\*\/|$)/,
+                        lookbehind: true
+                    },
+                    {
+                        pattern: /(^|[^\\:])\/\/.*/,
+                        lookbehind: true
+                    }
+                ],
+                'string': {
+                    pattern: /(["'])(?:\\(?:\r\n|[\s\S])|(?!\1)[^\\\r\n])*\1/,
+                    greedy: true
+                },
+                'keyword': /\b(?:const|var|fn|pub|try|catch|if|else|while|for|switch|return|defer|errdefer|unreachable|break|continue|struct|enum|union|error|test|comptime|inline|export|extern|packed|align|volatile|allowzero|noalias)\b/,
+                'builtin': /\b(?:u8|u16|u32|u64|u128|i8|i16|i32|i64|i128|f16|f32|f64|f128|bool|void|type|anytype|anyopaque|noreturn|c_short|c_ushort|c_int|c_uint|c_long|c_ulong|c_longlong|c_ulonglong|c_longdouble|c_void|comptime_int|comptime_float)\b/,
+                'function': /\b[a-zA-Z_]\w*(?=\s*\()/,
+                'number': /\b(?:0[xX][\da-fA-F]+(?:\.[\da-fA-F]*)?(?:[pP][+-]?\d+)?|\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)\b/,
+                'boolean': /\b(?:true|false|null|undefined)\b/,
+                'operator': /[+\-*\/%=!<>&|^~?:@]/,
+                'punctuation': /[{}[\];(),.]/
+            };
+        }
+
+        // Re-highlight all code blocks
+        Prism.highlightAll();
     }
 });
 

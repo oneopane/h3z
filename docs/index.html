@@ -13,7 +13,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    
+
+    <!-- Prism.js for syntax highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
     <!-- Styles -->
     <link rel="stylesheet" href="styles.css">
     
@@ -110,19 +113,19 @@
                         <span class="code-title">main.zig</span>
                     </div>
                     <div class="code-content">
-                        <pre><code>const std = @import("std");
+                        <pre><code class="language-zig">const std = @import("std");
 const h3 = @import("h3");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    
+
     var app = try h3.createApp(gpa.allocator());
     defer app.deinit();
-    
+
     _ = app.get("/", homeHandler);
     _ = app.get("/api/users/:id", getUserHandler);
-    
+
     try h3.serve(&app, .{ .port = 3000 });
 }
 
@@ -226,7 +229,7 @@ fn getUserHandler(event: *h3.Event) !void {
                     <div class="step-content">
                         <h3 class="step-title">Install Zig</h3>
                         <div class="code-block">
-                            <code>curl -sSL https://ziglang.org/download/ | sh</code>
+                            <pre><code class="language-bash">curl -sSL https://ziglang.org/download/ | sh</code></pre>
                         </div>
                     </div>
                 </div>
@@ -236,7 +239,7 @@ fn getUserHandler(event: *h3.Event) !void {
                     <div class="step-content">
                         <h3 class="step-title">Create Project</h3>
                         <div class="code-block">
-                            <code>zig init</code>
+                            <pre><code class="language-bash">zig init</code></pre>
                         </div>
                     </div>
                 </div>
@@ -246,7 +249,13 @@ fn getUserHandler(event: *h3.Event) !void {
                     <div class="step-content">
                         <h3 class="step-title">Add h3z Dependency</h3>
                         <div class="code-block">
-                            <code>// Add to build.zig.zon<br>.h3 = .{ .url = "https://github.com/dg0230/h3z/archive/main.tar.gz" }</code>
+                            <pre><code class="language-zig">// Add to build.zig.zon
+.dependencies = .{
+    .h3 = .{
+        .url = "https://github.com/dg0230/h3z/archive/main.tar.gz",
+        .hash = "12345..." // zig will provide this
+    }
+}</code></pre>
                         </div>
                     </div>
                 </div>
@@ -256,7 +265,7 @@ fn getUserHandler(event: *h3.Event) !void {
                     <div class="step-content">
                         <h3 class="step-title">Run Your Server</h3>
                         <div class="code-block">
-                            <code>zig build run</code>
+                            <pre><code class="language-bash">zig build run</code></pre>
                         </div>
                     </div>
                 </div>
@@ -313,7 +322,12 @@ fn getUserHandler(event: *h3.Event) !void {
         </div>
     </footer>
 
-    <!-- Scripts -->
+    <!-- Prism.js for syntax highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/copy-to-clipboard/prism-copy-to-clipboard.min.js"></script>
+
+    <!-- Custom Scripts -->
     <script src="script.js"></script>
 </body>
 </html>
