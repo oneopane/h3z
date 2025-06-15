@@ -518,7 +518,7 @@ pub const LibxevAdapter = struct {
 
 // Tests
 test "LibxevAdapter.init" {
-    var app = H3App.init(std.testing.allocator);
+    var app = try H3App.init(std.testing.allocator);
     defer app.deinit();
 
     var adapter = LibxevAdapter.init(std.testing.allocator, &app);
@@ -532,7 +532,7 @@ test "LibxevAdapter.init" {
 }
 
 test "LibxevAdapter.parseHttpRequest" {
-    var app = H3App.init(std.testing.allocator);
+    var app = try H3App.init(std.testing.allocator);
     defer app.deinit();
 
     var adapter = LibxevAdapter.init(std.testing.allocator, &app);
@@ -558,7 +558,7 @@ test "LibxevAdapter.parseHttpRequest" {
 }
 
 test "LibxevAdapter.info" {
-    var app = H3App.init(std.testing.allocator);
+    var app = try H3App.init(std.testing.allocator);
     defer app.deinit();
 
     var adapter = LibxevAdapter.init(std.testing.allocator, &app);

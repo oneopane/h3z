@@ -337,7 +337,7 @@ const ConnectionJob = struct {
 
 // Tests
 test "StdAdapter.init" {
-    var app = H3App.init(std.testing.allocator);
+    var app = try H3App.init(std.testing.allocator);
     defer app.deinit();
 
     var adapter = StdAdapter.init(std.testing.allocator, &app);
@@ -349,7 +349,7 @@ test "StdAdapter.init" {
 }
 
 test "StdAdapter.parseHttpRequest" {
-    var app = H3App.init(std.testing.allocator);
+    var app = try H3App.init(std.testing.allocator);
     defer app.deinit();
 
     var adapter = StdAdapter.init(std.testing.allocator, &app);

@@ -69,15 +69,15 @@ pub const H3 = struct {
     allocator: std.mem.Allocator,
 
     /// Initialize a new H3 application with performance optimizations
-    pub fn init(allocator: std.mem.Allocator) H3 {
+    pub fn init(allocator: std.mem.Allocator) !H3 {
         const h3_config = H3Config{};
         return H3.initWithConfig(allocator, h3_config);
     }
 
     /// Initialize with configuration and performance optimizations
-    pub fn initWithConfig(allocator: std.mem.Allocator, h3_config: H3Config) H3 {
+    pub fn initWithConfig(allocator: std.mem.Allocator, h3_config: H3Config) !H3 {
         var app = H3{
-            .router = Router.init(allocator),
+            .router = try Router.init(allocator),
             .middlewares = std.ArrayList(Middleware).init(allocator),
             .fast_middlewares = FastMiddlewareChain.init(),
             .event_pool = null,
@@ -320,7 +320,7 @@ pub const H3App = struct {
 
         var memory_manager = try MemoryManager.init(allocator, h3_config.memory);
         var component_registry = ComponentRegistry.init(allocator, &memory_manager, &h3_config);
-        var router_component = RouterComponent.init(allocator, h3_config.router);
+        var router_component = try RouterComponent.init(allocator, h3_config.router);
 
         try component_registry.register(router_component.component());
 
@@ -450,7 +450,7 @@ pub fn createDevApp(allocator: std.mem.Allocator) !H3App {
 }
 
 test "H3.init and deinit" {
-    var app = H3.init(std.testing.allocator);
+    var app = try H3.init(std.testing.allocator);
     defer app.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), app.getRouteCount());
@@ -458,7 +458,7 @@ test "H3.init and deinit" {
 }
 
 test "H3.route registration" {
-    var app = H3.init(std.testing.allocator);
+    var app = try H3.init(std.testing.allocator);
     defer app.deinit();
 
     const testHandler = struct {
@@ -475,7 +475,7 @@ test "H3.route registration" {
 }
 
 test "H3.middleware registration" {
-    var app = H3.init(std.testing.allocator);
+    var app = try H3.init(std.testing.allocator);
     defer app.deinit();
 
     const testMiddleware = struct {
@@ -492,7 +492,7 @@ test "H3.middleware registration" {
 }
 
 test "H3.handle basic request" {
-    var app = H3.init(std.testing.allocator);
+    var app = try H3.init(std.testing.allocator);
     defer app.deinit();
 
     const testHandler = struct {
@@ -516,7 +516,7 @@ test "H3.handle basic request" {
 }
 
 test "H3.middleware chain execution" {
-    var app = H3.init(std.testing.allocator);
+    var app = try H3.init(std.testing.allocator);
     defer app.deinit();
 
     // This test verifies middleware chain execution order
@@ -582,7 +582,11 @@ test "H3App component architecture" {
     // Use testing config to avoid memory leaks
     const test_config = config.H3Config.testing();
     var app = try H3App.initWithConfig(std.testing.allocator, test_config);
-    defer app.deinit();
+    defer {
+        // Clear routes before deinit to prevent memory leaks
+        app.router_component.clear();
+        app.deinit();
+    }
 
     const testHandler = struct {
         fn handler(event: *H3Event) !void {

@@ -14,7 +14,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Create optimized H3 app with performance features enabled
-    var app = h3.createFastApp(allocator);
+    var app = try h3.createFastApp(allocator);
     defer app.deinit();
 
     // Add fast middleware for better performance

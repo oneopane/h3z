@@ -10,7 +10,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Create H3 app
-    var app = h3.createApp(allocator);
+    var app = try h3.createApp(allocator);
     defer app.deinit();
 
     // Add middleware

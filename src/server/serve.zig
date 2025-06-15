@@ -104,7 +104,7 @@ test "ServeOptions default values" {
 }
 
 test "Server.init" {
-    var app = H3App.init(std.testing.allocator);
+    var app = try H3App.init(std.testing.allocator);
     defer app.deinit();
 
     var server = Server.init(std.testing.allocator, &app);

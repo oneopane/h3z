@@ -114,12 +114,12 @@ pub const server = struct {
 
 // Convenience functions for better API
 /// Create a new H3 application with default configuration
-pub fn createApp(allocator: std.mem.Allocator) App {
+pub fn createApp(allocator: std.mem.Allocator) !App {
     return App.init(allocator);
 }
 
 /// Create a new H3 application with performance optimizations (Legacy)
-pub fn createFastApp(allocator: std.mem.Allocator) App {
+pub fn createFastApp(allocator: std.mem.Allocator) !App {
     const app_config = @import("core/app.zig").H3Config{
         .use_event_pool = true,
         .event_pool_size = 200,
@@ -130,7 +130,7 @@ pub fn createFastApp(allocator: std.mem.Allocator) App {
 }
 
 /// Create a new H3 application with custom configuration (Legacy)
-pub fn createAppWithConfig(allocator: std.mem.Allocator, app_config: @import("core/app.zig").H3Config) App {
+pub fn createAppWithConfig(allocator: std.mem.Allocator, app_config: @import("core/app.zig").H3Config) !App {
     return App.initWithConfig(allocator, app_config);
 }
 

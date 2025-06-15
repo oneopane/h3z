@@ -212,23 +212,29 @@ pub const Router = struct {
     };
 
     /// Initialize a new ultra-high-performance router
-    pub fn init(allocator: std.mem.Allocator) Router {
+    pub fn init(allocator: std.mem.Allocator) !Router {
         return Router.initWithConfig(allocator, RouterConfig{});
     }
 
     /// Initialize router with custom configuration
-    pub fn initWithConfig(allocator: std.mem.Allocator, router_config: RouterConfig) Router {
+    pub fn initWithConfig(allocator: std.mem.Allocator, router_config: RouterConfig) !Router {
         var method_routes: [std.meta.fields(HttpMethod).len]std.ArrayList(Route) = undefined;
 
         inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
             method_routes[i] = std.ArrayList(Route).init(allocator);
         }
 
+        const trie_router = try TrieRouter.init(allocator);
+        errdefer trie_router.deinit();
+
+        // Use smaller pool size for testing to reduce memory overhead
+        const pool_size: usize = if (router_config.enable_route_compilation) 200 else 10;
+
         return Router{
-            .trie_router = TrieRouter.init(allocator) catch unreachable,
+            .trie_router = trie_router,
             .route_cache = RouteCache.init(allocator, router_config.cache_size),
             .method_routes = method_routes,
-            .params_pool = RouteParamsPool.init(allocator, 200), // Larger pool
+            .params_pool = RouteParamsPool.init(allocator, pool_size),
             .allocator = allocator,
             .config = router_config,
         };
@@ -434,7 +440,7 @@ pub const Router = struct {
                     pattern.deinit();
                 }
             }
-            self.method_routes[i].clearRetainingCapacity();
+            self.method_routes[i].clearAndFree();
         }
     }
 
@@ -456,19 +462,21 @@ pub const RouterComponent = struct {
     const Self = @This();
 
     /// Create a new router component
-    pub fn init(allocator: std.mem.Allocator, router_config: config.RouterConfig) Self {
+    pub fn init(allocator: std.mem.Allocator, router_config: config.RouterConfig) !Self {
+        const router = try Router.initWithConfig(allocator, Router.RouterConfig{
+            .enable_cache = router_config.enable_cache,
+            .cache_size = router_config.cache_size,
+            .enable_trie = router_config.enable_trie,
+            .enable_compile_time_optimization = router_config.enable_compile_time_optimization,
+            .enable_route_compilation = router_config.enable_route_compilation,
+        });
+
         return Self{
             .base = .{
                 .component_config = router_config,
                 .name = "router",
             },
-            .router = Router.initWithConfig(allocator, Router.RouterConfig{
-                .enable_cache = router_config.enable_cache,
-                .cache_size = router_config.cache_size,
-                .enable_trie = router_config.enable_trie,
-                .enable_compile_time_optimization = router_config.enable_compile_time_optimization,
-                .enable_route_compilation = router_config.enable_route_compilation,
-            }),
+            .router = router,
         };
     }
 
@@ -540,7 +548,7 @@ pub const RouterComponent = struct {
 };
 
 test "Router.addRoute and findRoute" {
-    var router = Router.init(std.testing.allocator);
+    var router = try Router.init(std.testing.allocator);
     defer router.deinit();
 
     const testHandler = struct {
@@ -572,7 +580,7 @@ test "Router.addRoute and findRoute" {
 }
 
 test "Router.matchPatternSimple exact" {
-    var router = Router.init(std.testing.allocator);
+    var router = try Router.init(std.testing.allocator);
     defer router.deinit();
 
     var params = RouteParams.init(std.testing.allocator);
@@ -583,7 +591,7 @@ test "Router.matchPatternSimple exact" {
 }
 
 test "Router.matchPatternSimple parameters" {
-    var router = Router.init(std.testing.allocator);
+    var router = try Router.init(std.testing.allocator);
     defer router.deinit();
 
     var params = RouteParams.init(std.testing.allocator);
@@ -599,7 +607,7 @@ test "Router.matchPatternSimple parameters" {
 }
 
 test "Router.matchPatternSimple wildcard" {
-    var router = Router.init(std.testing.allocator);
+    var router = try Router.init(std.testing.allocator);
     defer router.deinit();
 
     var params = RouteParams.init(std.testing.allocator);

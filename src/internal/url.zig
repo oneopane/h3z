@@ -183,6 +183,15 @@ pub const QueryParser = struct {
     /// Parse query string into key-value map
     pub fn parse(allocator: std.mem.Allocator, query_string: []const u8) !std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage) {
         var result = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator);
+        errdefer {
+            // Clean up any allocated keys/values on error
+            var iter = result.iterator();
+            while (iter.next()) |entry| {
+                allocator.free(entry.key_ptr.*);
+                allocator.free(entry.value_ptr.*);
+            }
+            result.deinit();
+        }
 
         if (query_string.len == 0) return result;
 
@@ -190,15 +199,30 @@ pub const QueryParser = struct {
         while (pairs.next()) |pair| {
             if (std.mem.indexOf(u8, pair, "=")) |eq_pos| {
                 const key = try urlDecode(allocator, pair[0..eq_pos]);
+                errdefer allocator.free(key);
                 const value = try urlDecode(allocator, pair[eq_pos + 1 ..]);
+                errdefer allocator.free(value);
                 try result.put(key, value);
             } else {
                 const key = try urlDecode(allocator, pair);
-                try result.put(key, "");
+                errdefer allocator.free(key);
+                const empty_value = try allocator.dupe(u8, "");
+                errdefer allocator.free(empty_value);
+                try result.put(key, empty_value);
             }
         }
 
         return result;
+    }
+
+    /// Free the memory allocated by parse()
+    pub fn deinit(params: *std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage), allocator: std.mem.Allocator) void {
+        var iter = params.iterator();
+        while (iter.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            allocator.free(entry.value_ptr.*);
+        }
+        params.deinit();
     }
 
     /// Build query string from key-value map
@@ -398,7 +422,7 @@ test "Query string parsing" {
     const allocator = testing.allocator;
 
     var params = try QueryParser.parse(allocator, "name=John%20Doe&age=30&city=New+York");
-    defer params.deinit();
+    defer QueryParser.deinit(&params, allocator);
 
     try testing.expectEqualStrings("John Doe", params.get("name").?);
     try testing.expectEqualStrings("30", params.get("age").?);
