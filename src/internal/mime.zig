@@ -125,7 +125,7 @@ pub const MimeType = enum {
         else
             std.mem.trim(u8, mime_string, " ");
 
-        const mime_map = std.ComptimeStringMap(MimeType, .{
+        const mime_map = std.StaticStringMap(MimeType).initComptime(.{
             .{ "text/plain", .text_plain },
             .{ "text/html", .text_html },
             .{ "text/css", .text_css },
@@ -231,7 +231,7 @@ pub const MimeType = enum {
 pub const MimeDetector = struct {
     /// Detect MIME type from file extension
     pub fn fromExtension(extension: []const u8) MimeType {
-        const ext_map = std.ComptimeStringMap(MimeType, .{
+        const ext_map = std.StaticStringMap(MimeType).initComptime(.{
             // Text files
             .{ "txt", .text_plain },
             .{ "html", .text_html },
@@ -284,8 +284,10 @@ pub const MimeDetector = struct {
             .{ "otf", .font_otf },
         });
 
-        const lower_ext = std.ascii.lowerString(std.heap.page_allocator, extension) catch return .unknown;
-        defer std.heap.page_allocator.free(lower_ext);
+        // Use a stack buffer for lowercase conversion
+        var lower_buf: [64]u8 = undefined;
+        if (extension.len > lower_buf.len) return .unknown;
+        const lower_ext = std.ascii.lowerString(lower_buf[0..extension.len], extension);
 
         return ext_map.get(lower_ext) orelse .unknown;
     }
@@ -383,7 +385,7 @@ pub const ContentType = struct {
             .mime_type = .unknown,
         };
 
-        var parts = std.mem.split(u8, content_type_header, ";");
+        var parts = std.mem.splitScalar(u8, content_type_header, ';');
 
         // First part is the MIME type
         if (parts.next()) |mime_part| {
@@ -513,4 +515,11 @@ test "Content type parsing" {
 
     try testing.expect(ct.mime_type == .text_html);
     try testing.expectEqualStrings("utf-8", ct.charset.?);
+}
+
+// Public API functions
+/// Get MIME type for file extension
+pub fn getMimeType(extension: []const u8) []const u8 {
+    const mime_type = MimeDetector.fromExtension(extension);
+    return mime_type.toString();
 }

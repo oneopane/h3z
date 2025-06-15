@@ -87,7 +87,7 @@ pub const PatternCompiler = struct {
         var pattern_type = PatternType.exact;
 
         // Split pattern into segments
-        var path_segments = std.mem.split(u8, pattern, "/");
+        var path_segments = std.mem.splitScalar(u8, pattern, '/');
         while (path_segments.next()) |segment| {
             if (segment.len == 0) continue;
 
@@ -172,7 +172,7 @@ pub const PatternMatcher = struct {
         var path_segments = std.ArrayList([]const u8).init(allocator);
         defer path_segments.deinit();
 
-        var segments_iter = std.mem.split(u8, path, "/");
+        var segments_iter = std.mem.splitScalar(u8, path, '/');
         while (segments_iter.next()) |segment| {
             if (segment.len > 0) {
                 try path_segments.append(segment);
@@ -320,7 +320,7 @@ pub const PatternUtils = struct {
         var names = std.ArrayList([]const u8).init(allocator);
         defer names.deinit();
 
-        var segments = std.mem.split(u8, pattern, "/");
+        var segments = std.mem.splitScalar(u8, pattern, '/');
         while (segments.next()) |segment| {
             if (segment.len > 1 and segment[0] == ':') {
                 const param_name = segment[1..];
@@ -340,7 +340,7 @@ pub const PatternUtils = struct {
         var result = std.ArrayList(u8).init(allocator);
         defer result.deinit();
 
-        var segments = std.mem.split(u8, pattern, "/");
+        var segments = std.mem.splitScalar(u8, pattern, '/');
         var first = true;
         while (segments.next()) |segment| {
             if (segment.len == 0) continue;
@@ -392,6 +392,57 @@ pub const PatternUtils = struct {
         }
 
         return result.toOwnedSlice();
+    }
+
+    /// Validate if a pattern is valid
+    fn isValidPatternInternal(pattern: []const u8) bool {
+        // Empty pattern is invalid
+        if (pattern.len == 0) return false;
+
+        // Check pattern starts with /
+        if (pattern[0] != '/') return false;
+
+        // Cannot end with / (except for root)
+        if (pattern.len > 1 and pattern[pattern.len - 1] == '/') return false;
+
+        // Check for invalid parameter syntax
+        var i: usize = 0;
+        while (i < pattern.len) {
+            if (pattern[i] == ':') {
+                // Check parameter name exists
+                if (i + 1 >= pattern.len or pattern[i + 1] == '/') return false;
+
+                // Find end of parameter name
+                var j = i + 1;
+                while (j < pattern.len and pattern[j] != '/') {
+                    j += 1;
+                }
+
+                // Check for invalid characters in parameter name
+                const param_name = pattern[i + 1 .. j];
+                if (param_name.len == 0) return false;
+
+                // Parameter name cannot end with ':'
+                if (param_name[param_name.len - 1] == ':') return false;
+
+                i = j;
+            } else if (pattern[i] == '*') {
+                // Check wildcard position
+                if (i + 1 < pattern.len and pattern[i + 1] != '/') {
+                    // Check if there's content after wildcard
+                    var j = i + 1;
+                    while (j < pattern.len and pattern[j] == '/') {
+                        j += 1;
+                    }
+                    if (j < pattern.len) return false; // Content after wildcard
+                }
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
+
+        return true;
     }
 };
 
@@ -451,4 +502,61 @@ test "Parameter extraction" {
     try testing.expect(names.len == 2);
     try testing.expectEqualStrings("id", names[0]);
     try testing.expectEqualStrings("postId", names[1]);
+}
+
+// Public API functions
+/// Validate if a pattern is valid
+pub fn isValidPattern(pattern: []const u8) bool {
+    // Empty pattern is invalid
+    if (pattern.len == 0) return false;
+
+    // Check pattern starts with /
+    if (pattern[0] != '/') return false;
+
+    // Check for valid characters and structure
+    var in_param = false;
+    var param_name_start: ?usize = null;
+
+    for (pattern[1..], 1..) |char, i| {
+        switch (char) {
+            ':' => {
+                if (in_param) return false; // Nested parameters not allowed
+                in_param = true;
+                param_name_start = i + 1;
+            },
+            '/' => {
+                if (in_param) {
+                    if (param_name_start) |start| {
+                        if (i == start) return false; // Empty parameter name
+                    }
+                    in_param = false;
+                    param_name_start = null;
+                }
+            },
+            '*' => {
+                // Check wildcard at end
+                if (i != pattern.len - 1) return false;
+            },
+            'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {
+                // Valid characters
+            },
+            '?' => {
+                // Optional parameter marker, only valid at end of parameter
+                if (!in_param) return false;
+            },
+            else => {
+                // Invalid character
+                return false;
+            },
+        }
+    }
+
+    // If we end in a parameter, make sure it has a name
+    if (in_param) {
+        if (param_name_start) |start| {
+            if (start >= pattern.len) return false; // Empty parameter name
+        }
+    }
+
+    return true;
 }

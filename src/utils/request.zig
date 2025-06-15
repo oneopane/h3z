@@ -163,7 +163,7 @@ pub fn parseFormData(event: *H3Event) !std.HashMap([]const u8, []const u8, std.h
 
     var form_data = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(event.allocator);
 
-    var pairs = std.mem.split(u8, body, "&");
+    var pairs = std.mem.splitScalar(u8, body, '&');
     while (pairs.next()) |pair| {
         if (std.mem.indexOf(u8, pair, "=")) |eq_pos| {
             const key = pair[0..eq_pos];

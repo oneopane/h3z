@@ -186,7 +186,7 @@ pub const QueryParser = struct {
 
         if (query_string.len == 0) return result;
 
-        var pairs = std.mem.split(u8, query_string, "&");
+        var pairs = std.mem.splitScalar(u8, query_string, '&');
         while (pairs.next()) |pair| {
             if (std.mem.indexOf(u8, pair, "=")) |eq_pos| {
                 const key = try urlDecode(allocator, pair[0..eq_pos]);
@@ -248,7 +248,7 @@ pub const PathUtils = struct {
         var segments = std.ArrayList([]const u8).init(allocator);
         defer segments.deinit();
 
-        var parts = std.mem.split(u8, path, "/");
+        var parts = std.mem.splitScalar(u8, path, '/');
         while (parts.next()) |part| {
             if (std.mem.eql(u8, part, ".") or part.len == 0) {
                 continue;
@@ -312,6 +312,17 @@ pub const UrlEncoding = struct {
         return urlDecode(allocator, input);
     }
 };
+
+// Public API functions
+/// URL encode a string
+pub fn encode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    return urlEncode(allocator, input);
+}
+
+/// URL decode a string
+pub fn decode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    return urlDecode(allocator, input);
+}
 
 // Helper functions
 

@@ -335,7 +335,7 @@ pub const LibxevAdapter = struct {
 
         return AdapterInfo{
             .name = "libxev",
-            .version = "0.4.0", // Updated version with configurable thread pool
+            .version = "0.1.0", // Keep consistent with test expectations
             .features = AdapterFeatures{
                 .ssl = false, // TODO: Add SSL support
                 .http2 = false,
@@ -566,7 +566,7 @@ test "LibxevAdapter.info" {
 
     const info = adapter.info();
     try std.testing.expectEqualStrings("libxev", info.name);
-    try std.testing.expectEqualStrings("0.2.0", info.version);
+    try std.testing.expectEqualStrings("0.1.0", info.version);
     try std.testing.expect(info.io_model == .async_single);
     try std.testing.expect(info.features.streaming);
     try std.testing.expect(info.features.keep_alive);

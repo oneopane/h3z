@@ -32,6 +32,7 @@ const std = @import("std");
 
 // Re-export core types and functions
 pub const App = @import("core/app.zig").H3;
+pub const H3 = @import("core/app.zig").H3; // Alias for App
 pub const Event = @import("core/event.zig").H3Event;
 pub const Handler = @import("core/handler.zig").Handler;
 pub const ContextHandler = @import("core/handler.zig").ContextHandler;
@@ -39,6 +40,7 @@ pub const HandlerRegistry = @import("core/handler.zig").HandlerRegistry;
 pub const Middleware = @import("core/middleware.zig").Middleware;
 pub const MiddlewareChain = @import("core/middleware.zig").MiddlewareChain;
 pub const MiddlewareContext = @import("core/interfaces.zig").MiddlewareContext;
+pub const Route = @import("core/router.zig").Route;
 
 // Re-export HTTP types
 pub const HttpMethod = @import("http/method.zig").HttpMethod;
@@ -102,6 +104,16 @@ pub fn sendHtml(event: *Event, html: []const u8) !void {
     try event.sendText(html);
 }
 
+/// Send an error response
+pub fn sendError(event: *Event, status: HttpStatus, message: []const u8) !void {
+    try event.sendError(status, message);
+}
+
+/// Send a redirect response
+pub fn redirect(event: *Event, location: []const u8, status: HttpStatus) !void {
+    try event.redirect(location, status);
+}
+
 /// Get a path parameter
 pub fn getParam(event: *Event, name: []const u8) ?[]const u8 {
     return utils.request.getParam(event, name);
@@ -150,6 +162,31 @@ pub fn getMethod(event: *Event) HttpMethod {
 /// Get request path
 pub fn getPath(event: *Event) []const u8 {
     return utils.request.getPath(event);
+}
+
+/// URL encode a string
+pub fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    return internal.url.encode(allocator, input);
+}
+
+/// URL decode a string
+pub fn urlDecode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    return internal.url.decode(allocator, input);
+}
+
+/// Get MIME type for file extension
+pub fn getMimeType(extension: []const u8) []const u8 {
+    return internal.mime.getMimeType(extension);
+}
+
+/// Parse HTTP method from string
+pub fn parseHttpMethod(method_str: []const u8) !HttpMethod {
+    return HttpMethod.fromString(method_str) orelse error.InvalidHttpMethod;
+}
+
+/// Validate route pattern
+pub fn isValidRoutePattern(pattern: []const u8) bool {
+    return internal.patterns.isValidPattern(pattern);
 }
 
 // Common middleware

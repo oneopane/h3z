@@ -75,8 +75,9 @@ pub const Response = struct {
 
     /// Set the Content-Length header
     pub fn setContentLength(self: *Response, length: usize) !void {
-        // Allocate persistent memory for the content-length string
-        const length_str = try std.fmt.allocPrint(self.allocator, "{d}", .{length});
+        // Use a stack buffer for the content-length string to avoid allocation
+        var buf: [32]u8 = undefined;
+        const length_str = try std.fmt.bufPrint(buf[0..], "{d}", .{length});
         try self.setHeader(HeaderNames.CONTENT_LENGTH, length_str);
     }
 
@@ -103,16 +104,28 @@ pub const Response = struct {
 
     /// Set response body as JSON from a struct
     pub fn setJsonValue(self: *Response, value: anytype) !void {
-        const json_str = try std.json.stringifyAlloc(self.allocator, value, .{});
-        // Note: In a real implementation, we'd need to manage this memory properly
+        // Use stack buffer for JSON serialization
+        var buf: [1024]u8 = undefined;
+        var stream = std.io.fixedBufferStream(buf[0..]);
+        try std.json.stringify(value, .{}, stream.writer());
+        const json_str = stream.getWritten();
         try self.setJson(json_str);
     }
 
     /// Set a redirect response
-    pub fn redirect(self: *Response, location: []const u8, status: ?HttpStatus) !void {
-        self.status = status orelse .found;
+    pub fn redirect(self: *Response, location: []const u8, status: HttpStatus) !void {
+        self.status = status;
         try self.setHeader(HeaderNames.LOCATION, location);
         self.body = null;
+    }
+
+    /// Set an error response
+    pub fn setError(self: *Response, status: HttpStatus, message: []const u8) !void {
+        self.status = status;
+        // Use a larger stack buffer for error response JSON
+        var buf: [512]u8 = undefined;
+        const error_response = try std.fmt.bufPrint(buf[0..], "{{\"error\":true,\"message\":\"{s}\",\"status\":{}}}", .{ message, @intFromEnum(status) });
+        try self.setJson(error_response);
     }
 
     /// Set CORS headers

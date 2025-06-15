@@ -118,7 +118,7 @@ pub const BodyParser = struct {
 
         var form_data = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(event.allocator);
 
-        var pairs = std.mem.split(u8, body, "&");
+        var pairs = std.mem.splitScalar(u8, body, '&');
         while (pairs.next()) |pair| {
             if (std.mem.indexOf(u8, pair, "=")) |eq_pos| {
                 const key = try urlDecode(event.allocator, pair[0..eq_pos]);
@@ -148,7 +148,7 @@ pub const BodyParser = struct {
         const boundary_marker = try std.fmt.allocPrint(event.allocator, "--{s}", .{boundary});
         defer event.allocator.free(boundary_marker);
 
-        var parts = std.mem.split(u8, body, boundary_marker);
+        var parts = std.mem.splitSequence(u8, body, boundary_marker);
         _ = parts.next(); // Skip preamble
 
         while (parts.next()) |part| {
@@ -274,7 +274,7 @@ fn parseMultipartField(_: std.mem.Allocator, part: []const u8) !FormField {
     var filename: ?[]const u8 = null;
     var content_type: ?[]const u8 = null;
 
-    var header_lines = std.mem.split(u8, headers, "\r\n");
+    var header_lines = std.mem.splitSequence(u8, headers, "\r\n");
     while (header_lines.next()) |line| {
         if (std.mem.startsWith(u8, line, "Content-Disposition:")) {
             name = extractDispositionValue(line, "name");

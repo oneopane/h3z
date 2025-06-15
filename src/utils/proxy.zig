@@ -256,7 +256,7 @@ pub const ProxyUtils = struct {
         // PROXY TCP4 192.168.1.1 192.168.1.2 12345 80
         if (!std.mem.startsWith(u8, header, "PROXY ")) return null;
 
-        var parts = std.mem.split(u8, header[6..], " ");
+        var parts = std.mem.splitScalar(u8, header[6..], ' ');
         const protocol = parts.next() orelse return null;
         const src_ip = parts.next() orelse return null;
         const dest_ip = parts.next() orelse return null;

@@ -5,6 +5,7 @@ const HttpMethod = @import("../http/method.zig").HttpMethod;
 const HttpStatus = @import("../http/status.zig").HttpStatus;
 const H3Event = @import("event.zig").H3Event;
 const Router = @import("router.zig").Router;
+const Route = @import("router.zig").Route;
 pub const Handler = @import("router.zig").Handler;
 const interfaces = @import("interfaces.zig");
 pub const Middleware = interfaces.Middleware;
@@ -209,6 +210,41 @@ pub const H3 = struct {
     pub fn clear(self: *H3) void {
         self.router.clear();
         self.middlewares.clearRetainingCapacity();
+    }
+
+    /// Find a route for the given method and path
+    pub fn findRoute(self: *H3, method: HttpMethod, path: []const u8) ?*const Route {
+        if (self.router.findRoute(method, path)) |match| {
+            // Return route pointer for testing purposes
+            var params = match.params;
+            defer params.deinit();
+            return &match.route;
+        }
+        return null;
+    }
+
+    /// Extract parameters from a route match
+    pub fn extractParams(self: *H3, event: *H3Event, route: *const Route, path: []const u8) !void {
+        if (self.router.findRoute(route.method, path)) |match| {
+            var params = match.params;
+            defer params.deinit();
+
+            // Set route parameters in event
+            var param_iter = params.iterator();
+            while (param_iter.next()) |entry| {
+                try event.setParam(entry.key_ptr.*, entry.value_ptr.*);
+            }
+        }
+    }
+
+    /// Execute middleware chain for testing
+    pub fn executeMiddleware(self: *H3, event: *H3Event, route: *const Route) !void {
+        try self.executeMiddlewareChain(event, route.handler);
+    }
+
+    /// Get routes for testing (alias for router.getRoutes())
+    pub fn routes(self: *const H3) []const Route {
+        return self.router.getRoutes();
     }
 };
 

@@ -123,6 +123,35 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
 
+    // ===== H3 TEST SUITE =====
+
+    // Main test runner
+    const test_all = b.addExecutable(.{
+        .name = "test_all",
+        .root_source_file = b.path("tests/test_runner.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    test_all.root_module.addImport("h3", lib_mod);
+
+    // Create test_utils module for test_all
+    const test_utils_mod_all = b.addModule("test_utils_all", .{
+        .root_source_file = b.path("tests/test_utils.zig"),
+    });
+    test_utils_mod_all.addImport("h3", lib_mod);
+    test_all.root_module.addImport("test_utils", test_utils_mod_all);
+
+    const run_test_all = b.addRunArtifact(test_all);
+    const test_all_step = b.step("test-all", "Show H3 framework test status and run verification");
+    test_all_step.dependOn(&run_test_all.step);
+
+    // Individual test categories
+    addTestCategory(b, lib_mod, target, optimize, "simple", "tests/unit/simple_test.zig");
+    addTestCategory(b, lib_mod, target, optimize, "basic", "tests/unit/basic_test.zig");
+    addTestCategory(b, lib_mod, target, optimize, "unit", "tests/unit/core_test.zig");
+    addTestCategory(b, lib_mod, target, optimize, "integration", "tests/integration/routing_test.zig");
+    addTestCategory(b, lib_mod, target, optimize, "performance", "tests/integration/performance_test.zig");
+
     // Add examples
     addExample(b, lib_mod, target, optimize, "http_server", "examples/http_server.zig");
     addExample(b, lib_mod, target, optimize, "simple_server", "examples/simple_server.zig");
@@ -157,4 +186,35 @@ fn addExample(
     const run_step_desc = b.fmt("Run the {s} example", .{name});
     const run_step = b.step(run_step_name, run_step_desc);
     run_step.dependOn(&run_cmd.step);
+}
+
+fn addTestCategory(
+    b: *std.Build,
+    lib_mod: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    category: []const u8,
+    path: []const u8,
+) void {
+    const test_exe = b.addTest(.{
+        .root_source_file = b.path(path),
+        .target = target,
+        .optimize = optimize,
+    });
+    test_exe.root_module.addImport("h3", lib_mod);
+
+    // Create test_utils module with h3 dependency
+    const test_utils_mod = b.addModule("test_utils", .{
+        .root_source_file = b.path("tests/test_utils.zig"),
+    });
+    test_utils_mod.addImport("h3", lib_mod);
+
+    // Add test_utils to test executable
+    test_exe.root_module.addImport("test_utils", test_utils_mod);
+
+    const run_test = b.addRunArtifact(test_exe);
+    const test_step_name = b.fmt("test-{s}", .{category});
+    const test_step_desc = b.fmt("Run {s} tests", .{category});
+    const test_step = b.step(test_step_name, test_step_desc);
+    test_step.dependOn(&run_test.step);
 }

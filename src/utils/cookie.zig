@@ -157,7 +157,7 @@ pub const CookieUtils = struct {
     pub fn parseCookieHeader(allocator: std.mem.Allocator, cookie_header: []const u8) !CookieJar {
         var jar = CookieJar.init(allocator);
 
-        var pairs = std.mem.split(u8, cookie_header, ";");
+        var pairs = std.mem.splitScalar(u8, cookie_header, ';');
         while (pairs.next()) |pair| {
             const trimmed = std.mem.trim(u8, pair, " \t");
             if (std.mem.indexOf(u8, trimmed, "=")) |eq_pos| {

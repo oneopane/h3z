@@ -145,8 +145,13 @@ pub const H3Event = struct {
     }
 
     /// Send a redirect response
-    pub fn redirect(self: *H3Event, location: []const u8, status: ?HttpStatus) !void {
+    pub fn redirect(self: *H3Event, location: []const u8, status: HttpStatus) !void {
         try self.response.redirect(location, status);
+    }
+
+    /// Send an error response
+    pub fn sendError(self: *H3Event, status: HttpStatus, message: []const u8) !void {
+        try self.response.setError(status, message);
     }
 
     /// Read the request body
