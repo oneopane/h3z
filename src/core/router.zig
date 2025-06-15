@@ -173,8 +173,10 @@ pub const CompiledPattern = struct {
 
 /// Route match result
 pub const RouteMatch = struct {
-    route: *const Route,
+    handler: Handler,
     params: *RouteParams,
+    method: HttpMethod,
+    pattern: []const u8,
 };
 
 /// Ultra-high-performance router with Trie, cache, and compile-time optimizations
@@ -196,7 +198,7 @@ pub const Router = struct {
     const RouterConfig = struct {
         enable_cache: bool = true,
         cache_size: usize = 1000,
-        enable_trie: bool = true,
+        enable_trie: bool = false, // Disable by default for compatibility
         enable_compile_time_optimization: bool = true,
     };
 
@@ -273,12 +275,10 @@ pub const Router = struct {
                 }
 
                 return RouteMatch{
-                    .route = &Route{
-                        .method = method,
-                        .pattern = path,
-                        .handler = cached.handler.?,
-                    },
+                    .handler = cached.handler.?,
                     .params = params,
+                    .method = method,
+                    .pattern = path,
                 };
             }
         }
@@ -292,12 +292,10 @@ pub const Router = struct {
                 }
 
                 return RouteMatch{
-                    .route = &Route{
-                        .method = method,
-                        .pattern = path,
-                        .handler = trie_match.handler,
-                    },
+                    .handler = trie_match.handler,
                     .params = trie_match.params,
+                    .method = method,
+                    .pattern = path,
                 };
             }
         }
@@ -317,15 +315,19 @@ pub const Router = struct {
             if (route.compiled_pattern) |*pattern| {
                 if (pattern.match(path, params)) {
                     return RouteMatch{
-                        .route = route,
+                        .handler = route.handler,
                         .params = params,
+                        .method = route.method,
+                        .pattern = route.pattern,
                     };
                 }
             } else {
                 if (self.matchPatternSimple(route.pattern, path, params)) {
                     return RouteMatch{
-                        .route = route,
+                        .handler = route.handler,
                         .params = params,
+                        .method = route.method,
+                        .pattern = route.pattern,
                     };
                 }
             }
@@ -450,7 +452,7 @@ test "Router.addRoute and findRoute" {
     // Test exact match
     const result1 = router.findRoute(.GET, "/");
     try std.testing.expect(result1 != null);
-    try std.testing.expectEqualStrings("/", result1.?.route.pattern);
+    try std.testing.expectEqualStrings("/", result1.?.pattern);
     router.releaseMatch(result1.?);
 
     // Test no match
@@ -460,7 +462,7 @@ test "Router.addRoute and findRoute" {
     // Test parameter match
     const result3 = router.findRoute(.GET, "/users/123");
     try std.testing.expect(result3 != null);
-    try std.testing.expectEqualStrings("/users/:id", result3.?.route.pattern);
+    try std.testing.expectEqualStrings("/users/:id", result3.?.pattern);
     try std.testing.expectEqualStrings("123", result3.?.params.get("id").?);
     router.releaseMatch(result3.?);
 }

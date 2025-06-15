@@ -18,30 +18,30 @@ pub fn main() !void {
     defer app.deinit();
 
     // Add fast middleware for better performance
-    _ = app.useFast(h3.fastMiddleware.timing);      // Request timing
-    _ = app.useFast(h3.fastMiddleware.logger);      // Fast logging
-    _ = app.useFast(h3.fastMiddleware.cors);        // CORS headers
-    _ = app.useFast(h3.fastMiddleware.security);    // Security headers
-    _ = app.useFast(h3.fastMiddleware.timingEnd);   // Response timing
+    _ = app.useFast(h3.fastMiddleware.timing); // Request timing
+    _ = app.useFast(h3.fastMiddleware.logger); // Fast logging
+    _ = app.useFast(h3.fastMiddleware.cors); // CORS headers
+    _ = app.useFast(h3.fastMiddleware.security); // Security headers
+    _ = app.useFast(h3.fastMiddleware.timingEnd); // Response timing
 
     // Add routes with compiled patterns for fast matching
     _ = app.get("/", homeHandler);
     _ = app.get("/health", healthHandler);
     _ = app.get("/metrics", metricsHandler);
-    
+
     // API routes with parameters
     _ = app.get("/api/users/:id", getUserHandler);
     _ = app.post("/api/users", createUserHandler);
     _ = app.put("/api/users/:id", updateUserHandler);
     _ = app.delete("/api/users/:id", deleteUserHandler);
-    
+
     // Nested API routes
     _ = app.get("/api/users/:userId/posts/:postId", getUserPostHandler);
     _ = app.post("/api/users/:userId/posts", createUserPostHandler);
-    
+
     // Static file serving simulation
     _ = app.get("/static/*", staticFileHandler);
-    
+
     // Benchmark endpoint
     _ = app.get("/benchmark", benchmarkHandler);
 
@@ -105,7 +105,7 @@ fn homeHandler(event: *h3.Event) !void {
         \\</body>
         \\</html>
     ;
-    
+
     try h3.sendHtml(event, html);
 }
 
@@ -121,7 +121,7 @@ fn healthHandler(event: *h3.Event) !void {
             .compiled_routes = true,
         },
     };
-    
+
     try h3.sendJson(event, health_data);
 }
 
@@ -148,13 +148,13 @@ fn metricsHandler(event: *h3.Event) !void {
             .avg_execution_time_ns = 500,
         },
     };
-    
+
     try h3.sendJson(event, metrics);
 }
 
 fn getUserHandler(event: *h3.Event) !void {
     const user_id = h3.getParam(event, "id") orelse "unknown";
-    
+
     const user_data = .{
         .id = user_id,
         .name = "John Doe",
@@ -162,7 +162,7 @@ fn getUserHandler(event: *h3.Event) !void {
         .created_at = "2024-01-01T00:00:00Z",
         .performance_note = "Retrieved using optimized route matching",
     };
-    
+
     try h3.sendJson(event, user_data);
 }
 
@@ -175,14 +175,14 @@ fn createUserHandler(event: *h3.Event) !void {
         .created_at = "2024-01-01T00:00:00Z",
         .performance_note = "Created using fast middleware chain",
     };
-    
+
     h3.setStatus(event, .created);
     try h3.sendJson(event, new_user);
 }
 
 fn updateUserHandler(event: *h3.Event) !void {
     const user_id = h3.getParam(event, "id") orelse "unknown";
-    
+
     const updated_user = .{
         .id = user_id,
         .name = "Updated User",
@@ -190,26 +190,26 @@ fn updateUserHandler(event: *h3.Event) !void {
         .updated_at = "2024-01-01T00:00:00Z",
         .performance_note = "Updated using compiled route patterns",
     };
-    
+
     try h3.sendJson(event, updated_user);
 }
 
 fn deleteUserHandler(event: *h3.Event) !void {
     const user_id = h3.getParam(event, "id") orelse "unknown";
-    
+
     const result = .{
         .deleted_id = user_id,
         .success = true,
         .performance_note = "Deleted using optimized parameter extraction",
     };
-    
+
     try h3.sendJson(event, result);
 }
 
 fn getUserPostHandler(event: *h3.Event) !void {
     const user_id = h3.getParam(event, "userId") orelse "unknown";
     const post_id = h3.getParam(event, "postId") orelse "unknown";
-    
+
     const post_data = .{
         .id = post_id,
         .user_id = user_id,
@@ -217,13 +217,13 @@ fn getUserPostHandler(event: *h3.Event) !void {
         .content = "This is a sample post retrieved using nested route parameters.",
         .performance_note = "Multi-parameter extraction optimized",
     };
-    
+
     try h3.sendJson(event, post_data);
 }
 
 fn createUserPostHandler(event: *h3.Event) !void {
     const user_id = h3.getParam(event, "userId") orelse "unknown";
-    
+
     const new_post = .{
         .id = "new-post-456",
         .user_id = user_id,
@@ -232,36 +232,36 @@ fn createUserPostHandler(event: *h3.Event) !void {
         .created_at = "2024-01-01T00:00:00Z",
         .performance_note = "Created using fast middleware and optimized routing",
     };
-    
+
     h3.setStatus(event, .created);
     try h3.sendJson(event, new_post);
 }
 
 fn staticFileHandler(event: *h3.Event) !void {
     const path = h3.getPath(event);
-    
+
     const response = .{
         .message = "Static file serving simulation",
         .requested_path = path,
         .note = "In production, this would serve actual static files",
         .performance_note = "Wildcard routing handled efficiently",
     };
-    
+
     try h3.sendJson(event, response);
 }
 
 fn benchmarkHandler(event: *h3.Event) !void {
     const start_time = std.time.nanoTimestamp();
-    
+
     // Simulate some work
     var sum: u64 = 0;
     for (0..10000) |i| {
         sum += i;
     }
-    
+
     const end_time = std.time.nanoTimestamp();
     const duration_ns = end_time - start_time;
-    
+
     const benchmark_result = .{
         .test_name = "Simple computation benchmark",
         .iterations = 10000,
@@ -270,6 +270,6 @@ fn benchmarkHandler(event: *h3.Event) !void {
         .result = sum,
         .performance_note = "Benchmark executed with optimized request handling",
     };
-    
+
     try h3.sendJson(event, benchmark_result);
 }

@@ -203,9 +203,9 @@ pub const H3 = struct {
 
             // Execute optimized middleware chain
             if (self.config.use_fast_middleware and self.fast_middlewares.getCount() > 0) {
-                try self.fast_middlewares.executeWithErrorHandling(event, match.route.handler, self.config.on_error);
+                try self.fast_middlewares.executeWithErrorHandling(event, match.handler, self.config.on_error);
             } else {
-                try self.executeMiddlewareChain(event, match.route.handler);
+                try self.executeMiddlewareChain(event, match.handler);
             }
         } else {
             // No route found - 404
@@ -246,8 +246,8 @@ pub const H3 = struct {
     }
 
     /// Get the number of registered fast middlewares
-    pub fn getFastMiddlewareCount(self: *const H3) usize {
-        return self.fast_middlewares.count();
+    pub fn getFastMiddlewareCount(self: *const H3) u8 {
+        return self.fast_middlewares.getCount();
     }
 
     /// Clear all routes and middlewares
@@ -258,17 +258,17 @@ pub const H3 = struct {
     }
 
     /// Find a route for the given method and path
-    pub fn findRoute(self: *H3, method: HttpMethod, path: []const u8) ?*const Route {
+    pub fn findRoute(self: *H3, method: HttpMethod, path: []const u8) ?Handler {
         if (self.router.findRoute(method, path)) |match| {
             defer self.router.releaseMatch(match);
-            return match.route;
+            return match.handler;
         }
         return null;
     }
 
     /// Extract parameters from a route match
-    pub fn extractParams(self: *H3, event: *H3Event, route: *const Route, path: []const u8) !void {
-        if (self.router.findRoute(route.method, path)) |match| {
+    pub fn extractParams(self: *H3, event: *H3Event, method: HttpMethod, path: []const u8) !void {
+        if (self.router.findRoute(method, path)) |match| {
             defer self.router.releaseMatch(match);
 
             // Set route parameters in event
@@ -280,8 +280,8 @@ pub const H3 = struct {
     }
 
     /// Execute middleware chain for testing
-    pub fn executeMiddleware(self: *H3, event: *H3Event, route: *const Route) !void {
-        try self.executeMiddlewareChain(event, route.handler);
+    pub fn executeMiddleware(self: *H3, event: *H3Event, handler: Handler) !void {
+        try self.executeMiddlewareChain(event, handler);
     }
 
     /// Get routes for testing
