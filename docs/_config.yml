@@ -1,0 +1,46 @@
+# GitHub Pages configuration for h3z website
+title: "h3z - The Web Framework for Modern Zig Era"
+description: "H(TTP) server framework built for high performance and safety running on Zig. Zero dependencies, memory safe, and blazingly fast."
+url: "https://dg0230.github.io"
+baseurl: "/h3z"
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+theme: minima
+
+# Exclude files from processing
+exclude:
+  - README.md
+  - LICENSE
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  - .sass-cache
+  - .jekyll-cache
+  - .jekyll-metadata
+
+# Include files
+include:
+  - _pages
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+# SEO settings
+author: "h3z Contributors"
+twitter:
+  username: ziglang
+  card: summary_large_image
+
+social:
+  name: h3z
+  links:
+    - https://github.com/dg0230/h3z
+
+# Google Analytics (optional)
+# google_analytics: UA-XXXXXXXX-X

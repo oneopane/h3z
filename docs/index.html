@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>h3z - The Web Framework for Modern Zig Era</title>
+    <meta name="description" content="H(TTP) server framework built for high performance and safety running on Zig. Zero dependencies, memory safe, and blazingly fast.">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Meta tags -->
+    <meta property="og:title" content="h3z - The Web Framework for Modern Zig Era">
+    <meta property="og:description" content="H(TTP) server framework built for high performance and safety running on Zig">
+    <meta property="og:image" content="og-image.png">
+    <meta property="og:url" content="https://dg0230.github.io/h3z">
+    <meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <svg class="logo" width="32" height="32" viewBox="0 0 100 100" fill="none">
+                    <rect width="100" height="100" rx="20" fill="url(#gradient)"/>
+                    <text x="50" y="65" text-anchor="middle" fill="white" font-family="Inter" font-weight="700" font-size="36">h3</text>
+                    <defs>
+                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#3b82f6"/>
+                            <stop offset="100%" style="stop-color:#1d4ed8"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="brand-text">h3z</span>
+            </div>
+            
+            <div class="nav-links">
+                <a href="#guide" class="nav-link">Guide</a>
+                <a href="#api" class="nav-link">API</a>
+                <a href="#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/dg0230/h3z" class="nav-link github-link" target="_blank">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-container">
+            <div class="hero-content">
+                <div class="hero-badge">
+                    <span class="badge-text">⚡ Powered by Zig</span>
+                </div>
+                
+                <h1 class="hero-title">
+                    The Web Framework for<br>
+                    <span class="gradient-text">Modern Zig Era</span>
+                </h1>
+                
+                <p class="hero-description">
+                    H(TTP) server framework built for high performance and safety running on Zig. 
+                    Zero dependencies, memory safe, and blazingly fast.
+                </p>
+                
+                <div class="hero-actions">
+                    <a href="#get-started" class="btn btn-primary">Get Started</a>
+                    <a href="https://github.com/dg0230/h3z" class="btn btn-secondary" target="_blank">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                        </svg>
+                        View on GitHub
+                    </a>
+                </div>
+                
+                <div class="hero-stats">
+                    <div class="stat">
+                        <div class="stat-number">0</div>
+                        <div class="stat-label">Dependencies</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">100%</div>
+                        <div class="stat-label">Memory Safe</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">⚡</div>
+                        <div class="stat-label">Blazingly Fast</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="hero-code">
+                <div class="code-window">
+                    <div class="code-header">
+                        <div class="code-dots">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <span class="code-title">main.zig</span>
+                    </div>
+                    <div class="code-content">
+                        <pre><code>const std = @import("std");
+const h3 = @import("h3");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    
+    var app = try h3.createApp(gpa.allocator());
+    defer app.deinit();
+    
+    _ = app.get("/", homeHandler);
+    _ = app.get("/api/users/:id", getUserHandler);
+    
+    try h3.serve(&app, .{ .port = 3000 });
+}
+
+fn homeHandler(event: *h3.Event) !void {
+    try h3.sendJson(event, .{
+        .message = "Hello from h3z!",
+        .framework = "h3z",
+        .language = "Zig"
+    });
+}
+
+fn getUserHandler(event: *h3.Event) !void {
+    const id = h3.getParam(event, "id") orelse "unknown";
+    try h3.sendJson(event, .{
+        .id = id,
+        .name = "Zig Developer",
+        .framework = "h3z"
+    });
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Why Choose h3z?</h2>
+                <p class="section-description">
+                    Built with Zig's philosophy of optimal performance and safety
+                </p>
+            </div>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3 class="feature-title">Blazingly Fast</h3>
+                    <p class="feature-description">
+                        Built with Zig for maximum performance. Zero-cost abstractions and compile-time optimizations.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3 class="feature-title">Memory Safe</h3>
+                    <p class="feature-description">
+                        Zig's compile-time memory safety guarantees. No undefined behavior, no memory leaks.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📦</div>
+                    <h3 class="feature-title">Zero Dependencies</h3>
+                    <p class="feature-description">
+                        Pure Zig implementation with no external dependencies. Minimal attack surface and easy deployment.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🧩</div>
+                    <h3 class="feature-title">Composable</h3>
+                    <p class="feature-description">
+                        Modular architecture with middleware support. Build exactly what you need, nothing more.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3 class="feature-title">Type Safe</h3>
+                    <p class="feature-description">
+                        Compile-time type checking and safety. Catch errors before they reach production.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🌍</div>
+                    <h3 class="feature-title">Cross Platform</h3>
+                    <p class="feature-description">
+                        Runs on Linux, macOS, Windows, and more. One codebase, everywhere Zig runs.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Start Section -->
+    <section class="quick-start" id="get-started">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Get Started in Minutes</h2>
+                <p class="section-description">
+                    Create your first h3z application with just a few commands
+                </p>
+            </div>
+            
+            <div class="quick-start-steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Install Zig</h3>
+                        <div class="code-block">
+                            <code>curl -sSL https://ziglang.org/download/ | sh</code>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Create Project</h3>
+                        <div class="code-block">
+                            <code>zig init</code>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Add h3z Dependency</h3>
+                        <div class="code-block">
+                            <code>// Add to build.zig.zon<br>.h3 = .{ .url = "https://github.com/dg0230/h3z/archive/main.tar.gz" }</code>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Run Your Server</h3>
+                        <div class="code-block">
+                            <code>zig build run</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <svg class="footer-logo" width="24" height="24" viewBox="0 0 100 100" fill="none">
+                        <rect width="100" height="100" rx="20" fill="url(#footerGradient)"/>
+                        <text x="50" y="65" text-anchor="middle" fill="white" font-family="Inter" font-weight="700" font-size="36">h3</text>
+                        <defs>
+                            <linearGradient id="footerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#3b82f6"/>
+                                <stop offset="100%" style="stop-color:#1d4ed8"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                    <span class="footer-brand-text">h3z</span>
+                </div>
+                
+                <div class="footer-links">
+                    <div class="footer-section">
+                        <h4 class="footer-title">Framework</h4>
+                        <a href="#guide" class="footer-link">Guide</a>
+                        <a href="#api" class="footer-link">API Reference</a>
+                        <a href="#examples" class="footer-link">Examples</a>
+                    </div>
+                    
+                    <div class="footer-section">
+                        <h4 class="footer-title">Community</h4>
+                        <a href="https://github.com/dg0230/h3z" class="footer-link" target="_blank">GitHub</a>
+                        <a href="https://github.com/dg0230/h3z/issues" class="footer-link" target="_blank">Issues</a>
+                        <a href="https://github.com/dg0230/h3z/discussions" class="footer-link" target="_blank">Discussions</a>
+                    </div>
+                    
+                    <div class="footer-section">
+                        <h4 class="footer-title">Resources</h4>
+                        <a href="https://ziglang.org" class="footer-link" target="_blank">Zig Language</a>
+                        <a href="https://h3.unjs.io" class="footer-link" target="_blank">h3.js</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <p class="footer-text">
+                    Made with ❤️ for the Zig community. Inspired by <a href="https://h3.unjs.io" target="_blank">h3.js</a>.
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="script.js"></script>
+</body>
+</html>
