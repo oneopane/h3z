@@ -127,7 +127,7 @@ fn homeHandler(event: *h3.Event) !void {
         \\        </ul>
         \\        
         \\        <h2>📚 Learn More</h2>
-        \\        <p>Check out the <a href="https://github.com/your-repo/h3">H3 GitHub repository</a> for documentation and examples.</p>
+        \\        <p>Check out the <a href="https://github.com/dg0230/h3z">H3 GitHub repository</a> for documentation and examples.</p>
         \\    </div>
         \\</body>
         \\</html>

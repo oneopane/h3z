@@ -19,7 +19,7 @@ Add H3 to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .h3 = .{
-        .url = "https://github.com/your-repo/h3/archive/main.tar.gz",
+        .url = "https://github.com/dg0230/h3z/archive/main.tar.gz",
         .hash = "...",
     },
 },

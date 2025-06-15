@@ -332,5 +332,5 @@ pub const info = struct {
     pub const description = "Zero-dependency HTTP framework for Zig";
     pub const author = "H3 Contributors";
     pub const license = "MIT";
-    pub const repository = "https://github.com/h3-framework/h3";
+    pub const repository = "https://github.com/dg0230/h3z";
 };
