@@ -156,8 +156,7 @@ pub fn sendJson(event: *Event, data: anytype) !void {
 
 /// Send an HTML response
 pub fn sendHtml(event: *Event, html: []const u8) !void {
-    try event.setHeader("Content-Type", "text/html; charset=utf-8");
-    try event.sendText(html);
+    try event.sendHtml(html);
 }
 
 /// Send an error response
