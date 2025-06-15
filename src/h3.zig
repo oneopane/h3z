@@ -42,6 +42,12 @@ pub const MiddlewareChain = @import("core/middleware.zig").MiddlewareChain;
 pub const MiddlewareContext = @import("core/interfaces.zig").MiddlewareContext;
 pub const Route = @import("core/router.zig").Route;
 
+// Re-export performance optimizations
+pub const EventPool = @import("core/event_pool.zig").EventPool;
+pub const FastMiddleware = @import("core/fast_middleware.zig").FastMiddleware;
+pub const FastMiddlewareChain = @import("core/fast_middleware.zig").FastMiddlewareChain;
+pub const CommonMiddleware = @import("core/fast_middleware.zig").CommonMiddleware;
+
 // Re-export HTTP types
 pub const HttpMethod = @import("http/method.zig").HttpMethod;
 pub const HttpStatus = @import("http/status.zig").HttpStatus;
@@ -83,9 +89,25 @@ pub const server = struct {
 };
 
 // Convenience functions for better API
-/// Create a new H3 application
+/// Create a new H3 application with default configuration
 pub fn createApp(allocator: std.mem.Allocator) App {
     return App.init(allocator);
+}
+
+/// Create a new H3 application with performance optimizations
+pub fn createFastApp(allocator: std.mem.Allocator) App {
+    const config = @import("core/app.zig").H3Config{
+        .use_event_pool = true,
+        .event_pool_size = 200,
+        .use_fast_middleware = true,
+        .enable_route_compilation = true,
+    };
+    return App.initWithConfig(allocator, config);
+}
+
+/// Create a new H3 application with custom configuration
+pub fn createAppWithConfig(allocator: std.mem.Allocator, config: @import("core/app.zig").H3Config) App {
+    return App.initWithConfig(allocator, config);
 }
 
 /// Send a text response
@@ -189,7 +211,7 @@ pub fn isValidRoutePattern(pattern: []const u8) bool {
     return internal.patterns.isValidPattern(pattern);
 }
 
-// Common middleware
+// Common middleware (legacy)
 pub const middleware = struct {
     /// Logger middleware
     pub const logger = utils.middleware.logger;
@@ -202,6 +224,24 @@ pub const middleware = struct {
 
     /// JSON parser middleware
     pub const jsonParser = utils.middleware.jsonParser;
+};
+
+// Fast middleware (recommended for performance)
+pub const fastMiddleware = struct {
+    /// Fast logger middleware
+    pub const logger = CommonMiddleware.logger;
+
+    /// Fast CORS middleware
+    pub const cors = CommonMiddleware.cors;
+
+    /// Fast security headers middleware
+    pub const security = CommonMiddleware.security;
+
+    /// Fast timing middleware
+    pub const timing = CommonMiddleware.timing;
+
+    /// Fast timing end middleware
+    pub const timingEnd = CommonMiddleware.timingEnd;
 };
 
 // Common response helpers

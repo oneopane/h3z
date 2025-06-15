@@ -23,6 +23,9 @@ pub const Response = struct {
     /// Whether the response has been sent
     sent: bool,
 
+    /// Whether the response processing is finished
+    finished: bool,
+
     /// Allocator used for dynamic allocations
     allocator: std.mem.Allocator,
 
@@ -34,6 +37,7 @@ pub const Response = struct {
             .body = null,
             .version = "1.1",
             .sent = false,
+            .finished = false,
             .allocator = allocator,
         };
     }
@@ -41,6 +45,15 @@ pub const Response = struct {
     /// Deinitialize the response and free resources
     pub fn deinit(self: *Response) void {
         self.headers.deinit();
+    }
+
+    /// Reset the response for reuse in object pool
+    pub fn reset(self: *Response) void {
+        self.status = .ok;
+        self.body = null;
+        self.sent = false;
+        self.finished = false;
+        self.headers.clearRetainingCapacity();
     }
 
     /// Set the status code

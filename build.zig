@@ -155,6 +155,19 @@ pub fn build(b: *std.Build) void {
     // Add examples
     addExample(b, lib_mod, target, optimize, "http_server", "examples/http_server.zig");
     addExample(b, lib_mod, target, optimize, "simple_server", "examples/simple_server.zig");
+    addExample(b, lib_mod, target, optimize, "optimized_server", "examples/optimized_server.zig");
+
+    // Performance benchmarks
+    const benchmark_tests = b.addTest(.{
+        .root_source_file = b.path("tests/performance/benchmark.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    benchmark_tests.root_module.addImport("h3", lib_mod);
+
+    const run_benchmarks = b.addRunArtifact(benchmark_tests);
+    const benchmark_step = b.step("benchmark", "Run performance benchmarks");
+    benchmark_step.dependOn(&run_benchmarks.step);
 }
 
 fn addExample(

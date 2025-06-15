@@ -49,6 +49,16 @@ pub const Request = struct {
         self.headers.deinit();
     }
 
+    /// Reset the request for reuse in object pool
+    pub fn reset(self: *Request) void {
+        self.method = .GET;
+        self.url = "";
+        self.path = "";
+        self.query = null;
+        self.body = null;
+        self.headers.clearRetainingCapacity();
+    }
+
     /// Parse URL into path and query components
     pub fn parseUrl(self: *Request, url: []const u8) !void {
         self.url = url;

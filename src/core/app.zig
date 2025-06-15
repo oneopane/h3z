@@ -6,22 +6,32 @@ const HttpStatus = @import("../http/status.zig").HttpStatus;
 const H3Event = @import("event.zig").H3Event;
 const Router = @import("router.zig").Router;
 const Route = @import("router.zig").Route;
+const RouteMatch = @import("router.zig").RouteMatch;
 pub const Handler = @import("router.zig").Handler;
 const interfaces = @import("interfaces.zig");
 pub const Middleware = interfaces.Middleware;
 pub const MiddlewareContext = interfaces.MiddlewareContext;
+const EventPool = @import("event_pool.zig").EventPool;
+const FastMiddlewareChain = @import("fast_middleware.zig").FastMiddlewareChain;
+const FastMiddleware = @import("fast_middleware.zig").FastMiddleware;
 
 /// Global hook function types
 pub const OnRequestHook = *const fn (*H3Event) anyerror!void;
 pub const OnResponseHook = *const fn (*H3Event) anyerror!void;
 pub const OnErrorHook = *const fn (*H3Event, anyerror) anyerror!void;
 
-/// H3 application configuration
+/// H3 application configuration with performance options
 pub const H3Config = struct {
     debug: bool = false,
     on_request: ?OnRequestHook = null,
     on_response: ?OnResponseHook = null,
     on_error: ?OnErrorHook = null,
+
+    // Performance configuration
+    use_event_pool: bool = true,
+    event_pool_size: usize = 100,
+    use_fast_middleware: bool = true,
+    enable_route_compilation: bool = true,
 };
 
 /// Execute middleware at a specific index in the chain
@@ -42,37 +52,54 @@ fn executeMiddlewareAtIndex(app: *H3, event: *H3Event, index: usize, final_handl
     try middleware(event, context, index + 1, final_handler);
 }
 
-/// H3 application class
+/// High-performance H3 application class with optimized components
 pub const H3 = struct {
     router: Router,
     middlewares: std.ArrayList(Middleware),
+    fast_middlewares: FastMiddlewareChain,
+    event_pool: ?EventPool,
     config: H3Config,
     allocator: std.mem.Allocator,
 
-    /// Initialize a new H3 application
+    /// Initialize a new H3 application with performance optimizations
     pub fn init(allocator: std.mem.Allocator) H3 {
-        return H3{
-            .router = Router.init(allocator),
-            .middlewares = std.ArrayList(Middleware).init(allocator),
-            .config = H3Config{},
-            .allocator = allocator,
-        };
+        const config = H3Config{};
+        return H3.initWithConfig(allocator, config);
     }
 
-    /// Initialize with configuration
+    /// Initialize with configuration and performance optimizations
     pub fn initWithConfig(allocator: std.mem.Allocator, config: H3Config) H3 {
-        return H3{
+        var app = H3{
             .router = Router.init(allocator),
             .middlewares = std.ArrayList(Middleware).init(allocator),
+            .fast_middlewares = FastMiddlewareChain.init(allocator),
+            .event_pool = null,
             .config = config,
             .allocator = allocator,
         };
+
+        // Initialize event pool if enabled
+        if (config.use_event_pool) {
+            app.event_pool = EventPool.init(allocator, config.event_pool_size);
+
+            // Warm up the pool with some events
+            if (app.event_pool) |*pool| {
+                pool.warmUp(config.event_pool_size / 4) catch {}; // Warm up 25% of pool
+            }
+        }
+
+        return app;
     }
 
-    /// Deinitialize the application
+    /// Deinitialize the application and cleanup resources
     pub fn deinit(self: *H3) void {
         self.router.deinit();
         self.middlewares.deinit();
+        self.fast_middlewares.deinit();
+
+        if (self.event_pool) |*pool| {
+            pool.deinit();
+        }
     }
 
     /// Register a route handler for a specific HTTP method
@@ -128,10 +155,19 @@ pub const H3 = struct {
         return self;
     }
 
-    /// Register a global middleware
+    /// Register a global middleware (legacy API)
     pub fn use(self: *H3, middleware: Middleware) *H3 {
         self.middlewares.append(middleware) catch |err| {
             std.log.err("Failed to add middleware: {}", .{err});
+            return self;
+        };
+        return self;
+    }
+
+    /// Register a fast middleware (recommended for performance)
+    pub fn useFast(self: *H3, middleware: FastMiddleware) *H3 {
+        self.fast_middlewares.use(middleware) catch |err| {
+            std.log.err("Failed to add fast middleware: {}", .{err});
             return self;
         };
         return self;
@@ -155,19 +191,22 @@ pub const H3 = struct {
             std.log.warn("Failed to parse query parameters: {}", .{err});
         };
 
-        // Find matching route
+        // Find matching route with optimized lookup
         if (self.router.findRoute(event.getMethod(), event.getPath())) |match| {
-            var params = match.params;
-            defer params.deinit();
+            defer self.router.releaseMatch(match);
 
             // Set route parameters in event
-            var param_iter = params.iterator();
+            var param_iter = match.params.params.iterator();
             while (param_iter.next()) |entry| {
                 try event.setParam(entry.key_ptr.*, entry.value_ptr.*);
             }
 
-            // Execute middleware chain
-            try self.executeMiddlewareChain(event, match.route.handler);
+            // Execute optimized middleware chain
+            if (self.config.use_fast_middleware and self.fast_middlewares.count() > 0) {
+                try self.fast_middlewares.executeWithErrorHandling(event, match.route.handler, self.config.on_error);
+            } else {
+                try self.executeMiddlewareChain(event, match.route.handler);
+            }
         } else {
             // No route found - 404
             event.setStatus(.not_found);
@@ -198,7 +237,7 @@ pub const H3 = struct {
 
     /// Get the number of registered routes
     pub fn getRouteCount(self: *const H3) usize {
-        return self.router.getRoutes().len;
+        return self.router.getRouteCount();
     }
 
     /// Get the number of registered middlewares
@@ -206,19 +245,23 @@ pub const H3 = struct {
         return self.middlewares.items.len;
     }
 
+    /// Get the number of registered fast middlewares
+    pub fn getFastMiddlewareCount(self: *const H3) usize {
+        return self.fast_middlewares.count();
+    }
+
     /// Clear all routes and middlewares
     pub fn clear(self: *H3) void {
         self.router.clear();
         self.middlewares.clearRetainingCapacity();
+        self.fast_middlewares.clear();
     }
 
     /// Find a route for the given method and path
     pub fn findRoute(self: *H3, method: HttpMethod, path: []const u8) ?*const Route {
         if (self.router.findRoute(method, path)) |match| {
-            // Return route pointer for testing purposes
-            var params = match.params;
-            defer params.deinit();
-            return &match.route;
+            defer self.router.releaseMatch(match);
+            return match.route;
         }
         return null;
     }
@@ -226,11 +269,10 @@ pub const H3 = struct {
     /// Extract parameters from a route match
     pub fn extractParams(self: *H3, event: *H3Event, route: *const Route, path: []const u8) !void {
         if (self.router.findRoute(route.method, path)) |match| {
-            var params = match.params;
-            defer params.deinit();
+            defer self.router.releaseMatch(match);
 
             // Set route parameters in event
-            var param_iter = params.iterator();
+            var param_iter = match.params.params.iterator();
             while (param_iter.next()) |entry| {
                 try event.setParam(entry.key_ptr.*, entry.value_ptr.*);
             }
@@ -242,8 +284,8 @@ pub const H3 = struct {
         try self.executeMiddlewareChain(event, route.handler);
     }
 
-    /// Get routes for testing (alias for router.getRoutes())
-    pub fn routes(self: *const H3) []const Route {
+    /// Get routes for testing
+    pub fn routes(self: *const H3) std.ArrayList(Route) {
         return self.router.getRoutes();
     }
 };

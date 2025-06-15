@@ -50,6 +50,15 @@ pub const H3Event = struct {
         self.query.deinit();
     }
 
+    /// Reset the event for reuse in object pool
+    pub fn reset(self: *H3Event) void {
+        self.request.reset();
+        self.response.reset();
+        self.context.clearRetainingCapacity();
+        self.params.clearRetainingCapacity();
+        self.query.clearRetainingCapacity();
+    }
+
     /// Get a context value
     pub fn getContext(self: *const H3Event, key: []const u8) ?[]const u8 {
         return self.context.get(key);
