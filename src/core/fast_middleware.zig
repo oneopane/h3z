@@ -1,5 +1,5 @@
-//! Fast middleware system with simplified API and optimized execution
-//! Reduces overhead compared to the complex middleware chain system
+//! Ultra-fast middleware system with zero-overhead execution
+//! Optimized for maximum performance with minimal allocations
 
 const std = @import("std");
 const H3Event = @import("event.zig").H3Event;
@@ -17,43 +17,71 @@ pub const MiddlewareResult = enum {
     error_occurred,
 };
 
-/// Fast middleware chain with optimized execution
+/// Ultra-fast middleware chain with zero-allocation execution
 pub const FastMiddlewareChain = struct {
-    middlewares: std.ArrayList(FastMiddleware),
-    allocator: std.mem.Allocator,
+    // Use fixed-size array for better cache locality and zero allocations
+    middlewares: [32]FastMiddleware,
+    count: u8 = 0,
 
-    /// Initialize a new fast middleware chain
-    pub fn init(allocator: std.mem.Allocator) FastMiddlewareChain {
+    // Pre-allocated execution context to avoid allocations
+    execution_context: ExecutionContext,
+
+    const ExecutionContext = struct {
+        early_return: bool = false,
+        error_occurred: bool = false,
+        last_error: ?anyerror = null,
+
+        pub fn reset(self: *ExecutionContext) void {
+            self.early_return = false;
+            self.error_occurred = false;
+            self.last_error = null;
+        }
+    };
+
+    /// Initialize a new ultra-fast middleware chain
+    pub fn init() FastMiddlewareChain {
         return FastMiddlewareChain{
-            .middlewares = std.ArrayList(FastMiddleware).init(allocator),
-            .allocator = allocator,
+            .middlewares = [_]FastMiddleware{undefined} ** 32,
+            .execution_context = ExecutionContext{},
         };
     }
 
-    /// Deinitialize the middleware chain
+    /// No deinitialization needed - zero allocations
     pub fn deinit(self: *FastMiddlewareChain) void {
-        self.middlewares.deinit();
+        _ = self;
     }
 
-    /// Add a middleware to the chain
+    /// Add a middleware to the chain (compile-time bounded)
     pub fn use(self: *FastMiddlewareChain, middleware: FastMiddleware) !void {
-        try self.middlewares.append(middleware);
+        if (self.count >= 32) {
+            return error.TooManyMiddlewares;
+        }
+        self.middlewares[self.count] = middleware;
+        self.count += 1;
     }
 
-    /// Execute the middleware chain with early termination support
+    /// Execute the middleware chain with ultra-fast zero-allocation execution
     pub fn execute(self: *FastMiddlewareChain, event: *H3Event, final_handler: Handler) !void {
+        self.execution_context.reset();
+
         // Fast path: no middlewares
-        if (self.middlewares.items.len == 0) {
+        if (self.count == 0) {
             try final_handler(event);
             return;
         }
 
-        // Execute middlewares in sequence
-        for (self.middlewares.items) |middleware| {
-            try middleware(event);
+        // Ultra-fast loop with minimal overhead
+        var i: u8 = 0;
+        while (i < self.count) : (i += 1) {
+            self.middlewares[i](event) catch |err| {
+                self.execution_context.error_occurred = true;
+                self.execution_context.last_error = err;
+                return err;
+            };
 
-            // Check if response was already sent (early termination)
+            // Check for early termination (response already sent)
             if (event.response.finished) {
+                self.execution_context.early_return = true;
                 return;
             }
         }
@@ -62,10 +90,12 @@ pub const FastMiddlewareChain = struct {
         try final_handler(event);
     }
 
-    /// Execute middlewares with error handling and recovery
+    /// Execute middlewares with optimized error handling
     pub fn executeWithErrorHandling(self: *FastMiddlewareChain, event: *H3Event, final_handler: Handler, error_handler: ?*const fn (*H3Event, anyerror) anyerror!void) !void {
+        self.execution_context.reset();
+
         // Fast path: no middlewares
-        if (self.middlewares.items.len == 0) {
+        if (self.count == 0) {
             final_handler(event) catch |err| {
                 if (error_handler) |eh| {
                     try eh(event, err);
@@ -76,9 +106,13 @@ pub const FastMiddlewareChain = struct {
             return;
         }
 
-        // Execute middlewares with error handling
-        for (self.middlewares.items) |middleware| {
-            middleware(event) catch |err| {
+        // Ultra-fast execution with error handling
+        var i: u8 = 0;
+        while (i < self.count) : (i += 1) {
+            self.middlewares[i](event) catch |err| {
+                self.execution_context.error_occurred = true;
+                self.execution_context.last_error = err;
+
                 if (error_handler) |eh| {
                     try eh(event, err);
                     return;
@@ -87,8 +121,9 @@ pub const FastMiddlewareChain = struct {
                 }
             };
 
-            // Check if response was already sent
+            // Check for early termination
             if (event.response.finished) {
+                self.execution_context.early_return = true;
                 return;
             }
         }
@@ -104,13 +139,29 @@ pub const FastMiddlewareChain = struct {
     }
 
     /// Get middleware count
-    pub fn count(self: *const FastMiddlewareChain) usize {
-        return self.middlewares.items.len;
+    pub fn getCount(self: *const FastMiddlewareChain) u8 {
+        return self.count;
     }
 
-    /// Clear all middlewares
+    /// Clear all middlewares (zero-cost operation)
     pub fn clear(self: *FastMiddlewareChain) void {
-        self.middlewares.clearRetainingCapacity();
+        self.count = 0;
+        self.execution_context.reset();
+    }
+
+    /// Get execution statistics
+    pub fn getStats(self: *const FastMiddlewareChain) struct {
+        middleware_count: u8,
+        early_returns: bool,
+        errors_occurred: bool,
+        last_error: ?anyerror,
+    } {
+        return .{
+            .middleware_count = self.count,
+            .early_returns = self.execution_context.early_return,
+            .errors_occurred = self.execution_context.error_occurred,
+            .last_error = self.execution_context.last_error,
+        };
     }
 };
 
@@ -176,13 +227,18 @@ fn noopMiddleware(event: *H3Event) anyerror!void {
     _ = event;
 }
 
-/// Common middleware implementations
+/// Ultra-optimized common middleware implementations
 pub const CommonMiddleware = struct {
-    /// Simple logging middleware
+    /// Zero-allocation logging middleware
     pub fn logger(event: *H3Event) anyerror!void {
+        // Use stack buffer to avoid allocations
+        var buffer: [256]u8 = undefined;
         const method = event.getMethod();
         const path = event.getPath();
-        std.log.info("{s} {s}", .{ @tagName(method), path });
+
+        // Format directly to avoid string allocations
+        const log_msg = std.fmt.bufPrint(buffer[0..], "{s} {s}", .{ @tagName(method), path }) catch "LOG_ERROR";
+        std.log.info("{s}", .{log_msg});
     }
 
     /// CORS middleware with default settings
@@ -220,7 +276,7 @@ pub const CommonMiddleware = struct {
 };
 
 test "FastMiddlewareChain basic execution" {
-    var chain = FastMiddlewareChain.init(std.testing.allocator);
+    var chain = FastMiddlewareChain.init();
     defer chain.deinit();
 
     const TestState = struct {

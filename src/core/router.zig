@@ -1,8 +1,10 @@
-//! High-performance router with Trie-based routing and object pooling
+//! Ultra-high-performance router with Trie, LRU cache, and compile-time optimizations
 
 const std = @import("std");
 const HttpMethod = @import("../http/method.zig").HttpMethod;
 const H3Event = @import("event.zig").H3Event;
+const TrieRouter = @import("trie_router.zig").TrieRouter;
+const RouteCache = @import("route_cache.zig").RouteCache;
 
 /// Handler function type
 pub const Handler = *const fn (*H3Event) anyerror!void;
@@ -175,15 +177,36 @@ pub const RouteMatch = struct {
     params: *RouteParams,
 };
 
-/// High-performance router with method-based routing trees
+/// Ultra-high-performance router with Trie, cache, and compile-time optimizations
 pub const Router = struct {
-    // Separate route lists for each HTTP method for faster lookup
+    // Trie-based router for O(log n) lookups
+    trie_router: TrieRouter,
+
+    // LRU cache for hot path optimization
+    route_cache: RouteCache,
+
+    // Legacy route storage for compatibility
     method_routes: [std.meta.fields(HttpMethod).len]std.ArrayList(Route),
     params_pool: RouteParamsPool,
     allocator: std.mem.Allocator,
 
-    /// Initialize a new high-performance router
+    // Performance configuration
+    config: RouterConfig,
+
+    const RouterConfig = struct {
+        enable_cache: bool = true,
+        cache_size: usize = 1000,
+        enable_trie: bool = true,
+        enable_compile_time_optimization: bool = true,
+    };
+
+    /// Initialize a new ultra-high-performance router
     pub fn init(allocator: std.mem.Allocator) Router {
+        return Router.initWithConfig(allocator, RouterConfig{});
+    }
+
+    /// Initialize router with custom configuration
+    pub fn initWithConfig(allocator: std.mem.Allocator, config: RouterConfig) Router {
         var method_routes: [std.meta.fields(HttpMethod).len]std.ArrayList(Route) = undefined;
 
         inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
@@ -191,14 +214,20 @@ pub const Router = struct {
         }
 
         return Router{
+            .trie_router = TrieRouter.init(allocator) catch unreachable,
+            .route_cache = RouteCache.init(allocator, config.cache_size),
             .method_routes = method_routes,
-            .params_pool = RouteParamsPool.init(allocator, 100), // Pool size of 100
+            .params_pool = RouteParamsPool.init(allocator, 200), // Larger pool
             .allocator = allocator,
+            .config = config,
         };
     }
 
     /// Deinitialize the router
     pub fn deinit(self: *Router) void {
+        self.trie_router.deinit();
+        self.route_cache.deinit();
+
         inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
             for (self.method_routes[i].items) |*route| {
                 if (route.compiled_pattern) |*pattern| {
@@ -210,10 +239,16 @@ pub const Router = struct {
         self.params_pool.deinit();
     }
 
-    /// Add a route with automatic pattern compilation
+    /// Add a route with multi-tier optimization
     pub fn addRoute(self: *Router, method: HttpMethod, pattern: []const u8, handler: Handler) !void {
         const method_index = @intFromEnum(method);
 
+        // Add to Trie router for O(log n) lookups
+        if (self.config.enable_trie) {
+            try self.trie_router.addRoute(method, pattern, handler);
+        }
+
+        // Add to legacy router for compatibility
         var route = Route{
             .method = method,
             .pattern = pattern,
@@ -224,12 +259,58 @@ pub const Router = struct {
         try self.method_routes[method_index].append(route);
     }
 
-    /// Find a matching route with optimized lookup
+    /// Ultra-fast route lookup with multi-tier optimization
     pub fn findRoute(self: *Router, method: HttpMethod, path: []const u8) ?RouteMatch {
+        // Tier 1: LRU Cache lookup (O(1))
+        if (self.config.enable_cache) {
+            if (self.route_cache.get(method, path)) |cached| {
+                const params = self.params_pool.acquire() catch return null;
+
+                // Copy cached parameters
+                var param_iter = cached.params.iterator();
+                while (param_iter.next()) |entry| {
+                    params.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
+                }
+
+                return RouteMatch{
+                    .route = &Route{
+                        .method = method,
+                        .pattern = path,
+                        .handler = cached.handler.?,
+                    },
+                    .params = params,
+                };
+            }
+        }
+
+        // Tier 2: Trie router lookup (O(log n))
+        if (self.config.enable_trie) {
+            if (self.trie_router.findRoute(method, path)) |trie_match| {
+                // Cache the result for future lookups
+                if (self.config.enable_cache) {
+                    self.route_cache.put(method, path, trie_match.handler, trie_match.params.params) catch {};
+                }
+
+                return RouteMatch{
+                    .route = &Route{
+                        .method = method,
+                        .pattern = path,
+                        .handler = trie_match.handler,
+                    },
+                    .params = trie_match.params,
+                };
+            }
+        }
+
+        // Tier 3: Legacy linear search fallback
+        return self.findRouteLegacy(method, path);
+    }
+
+    /// Legacy route finding for compatibility
+    fn findRouteLegacy(self: *Router, method: HttpMethod, path: []const u8) ?RouteMatch {
         const method_index = @intFromEnum(method);
         const routes = &self.method_routes[method_index];
 
-        // Fast path: check routes for specific method only
         for (routes.items) |*route| {
             const params = self.params_pool.acquire() catch return null;
 
@@ -241,7 +322,6 @@ pub const Router = struct {
                     };
                 }
             } else {
-                // Fallback to simple pattern matching
                 if (self.matchPatternSimple(route.pattern, path, params)) {
                     return RouteMatch{
                         .route = route,

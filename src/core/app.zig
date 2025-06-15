@@ -72,7 +72,7 @@ pub const H3 = struct {
         var app = H3{
             .router = Router.init(allocator),
             .middlewares = std.ArrayList(Middleware).init(allocator),
-            .fast_middlewares = FastMiddlewareChain.init(allocator),
+            .fast_middlewares = FastMiddlewareChain.init(),
             .event_pool = null,
             .config = config,
             .allocator = allocator,
@@ -202,7 +202,7 @@ pub const H3 = struct {
             }
 
             // Execute optimized middleware chain
-            if (self.config.use_fast_middleware and self.fast_middlewares.count() > 0) {
+            if (self.config.use_fast_middleware and self.fast_middlewares.getCount() > 0) {
                 try self.fast_middlewares.executeWithErrorHandling(event, match.route.handler, self.config.on_error);
             } else {
                 try self.executeMiddlewareChain(event, match.route.handler);
