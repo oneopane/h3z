@@ -115,7 +115,7 @@ pub fn CompileTimeRouter(comptime routes: []const RouteInfo) type {
         const Self = @This();
 
         // Compile-time generated perfect hash for static routes
-        const StaticRouteMap = std.ComptimeStringMap(Handler, comptime blk: {
+        const StaticRouteMap = std.ComptimeStringMap(Handler, blk: {
             var map_entries: [static_routes.len]struct { []const u8, Handler } = undefined;
 
             for (static_routes, 0..) |route, i| {
@@ -186,7 +186,7 @@ pub fn CompileTimeRouter(comptime routes: []const RouteInfo) type {
                     return false;
                 }
 
-                switch (comptime segment_types[path_segment_index]) {
+                switch (segment_types[path_segment_index]) {
                     .static => {
                         if (!std.mem.eql(u8, pattern_segments[path_segment_index], path_segment)) {
                             return false;
