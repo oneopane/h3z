@@ -67,6 +67,16 @@ pub fn build(b: *std.Build) void {
     // running `zig build`).
     b.installArtifact(lib);
 
+    // Export the h3 module
+    const h3_module = b.addModule("h3", .{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Add libxev dependency to the exported module
+    h3_module.addImport("xev", libxev_dep.module("xev"));
+
     // This creates another `std.Build.Step.Compile`, but this one builds an executable
     // rather than a static library.
     const exe = b.addExecutable(.{
