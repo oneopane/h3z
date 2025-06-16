@@ -5,6 +5,8 @@ const Request = @import("../http/request.zig").Request;
 const Response = @import("../http/response.zig").Response;
 const HttpMethod = @import("../http/method.zig").HttpMethod;
 const HttpStatus = @import("../http/status.zig").HttpStatus;
+const url_utils = @import("../internal/url.zig");
+const body_utils = @import("../utils/body.zig");
 
 /// Context map for storing arbitrary data
 const Context = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage);
@@ -43,19 +45,62 @@ pub const H3Event = struct {
 
     /// Deinitialize the event and free resources
     pub fn deinit(self: *H3Event) void {
+        // Free key-value pairs in the context hash map
+        var context_iter = self.context.iterator();
+        while (context_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.context.deinit();
+
+        // Free key-value pairs in the params hash map
+        var params_iter = self.params.iterator();
+        while (params_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.params.deinit();
+
+        // Free key-value pairs in the query hash map
+        var query_iter = self.query.iterator();
+        while (query_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.query.deinit();
+
+        // Free request and response
         self.request.deinit();
         self.response.deinit();
-        self.context.deinit();
-        self.params.deinit();
-        self.query.deinit();
     }
 
     /// Reset the event for reuse in object pool
     pub fn reset(self: *H3Event) void {
         self.request.reset();
         self.response.reset();
+
+        // Free key-value pairs in the context hash map
+        var context_iter = self.context.iterator();
+        while (context_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
         self.context.clearRetainingCapacity();
+
+        // Free key-value pairs in the params hash map
+        var params_iter = self.params.iterator();
+        while (params_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
         self.params.clearRetainingCapacity();
+
+        // Free key-value pairs in the query hash map
+        var query_iter = self.query.iterator();
+        while (query_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
         self.query.clearRetainingCapacity();
     }
 
@@ -66,7 +111,22 @@ pub const H3Event = struct {
 
     /// Set a context value
     pub fn setContext(self: *H3Event, key: []const u8, value: []const u8) !void {
-        try self.context.put(key, value);
+        // Duplicate the key
+        const key_dup = try self.allocator.dupe(u8, key);
+        errdefer self.allocator.free(key_dup);
+
+        // Duplicate the value
+        const value_dup = try self.allocator.dupe(u8, value);
+        errdefer self.allocator.free(value_dup);
+
+        // Check if the key already exists, if so, free the old key-value pair
+        if (self.context.getEntry(key)) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+
+        // Add the new key-value pair
+        try self.context.put(key_dup, value_dup);
     }
 
     /// Get a route parameter
@@ -76,7 +136,22 @@ pub const H3Event = struct {
 
     /// Set a route parameter
     pub fn setParam(self: *H3Event, key: []const u8, value: []const u8) !void {
-        try self.params.put(key, value);
+        // Duplicate the key
+        const key_dup = try self.allocator.dupe(u8, key);
+        errdefer self.allocator.free(key_dup);
+
+        // Duplicate the value
+        const value_dup = try self.allocator.dupe(u8, value);
+        errdefer self.allocator.free(value_dup);
+
+        // Check if the key already exists, if so, free the old key-value pair
+        if (self.params.getEntry(key)) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+
+        // Add the new key-value pair
+        try self.params.put(key_dup, value_dup);
     }
 
     /// Get a query parameter
@@ -85,21 +160,40 @@ pub const H3Event = struct {
     }
 
     /// Parse query string into query parameters
+    /// This function properly handles URL-encoded characters in query parameters
     pub fn parseQuery(self: *H3Event) !void {
-        if (self.request.query) |query_string| {
-            var iter = std.mem.splitSequence(u8, query_string, "&");
-            while (iter.next()) |pair| {
-                if (std.mem.indexOf(u8, pair, "=")) |eq_pos| {
-                    const key = pair[0..eq_pos];
-                    const value = pair[eq_pos + 1 ..];
+        // If there is no query string, return directly
+        const query_string = self.request.query orelse return;
 
-                    // URL decode key and value (simplified implementation)
-                    try self.query.put(key, value);
-                } else {
-                    // Handle key without value
-                    try self.query.put(pair, "");
-                }
-            }
+        // First clean up existing query parameters to avoid memory leaks
+        var old_iter = self.query.iterator();
+        while (old_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.query.clearRetainingCapacity();
+
+        // Use url_utils.QueryParser to parse the query string
+        // It automatically handles URL-encoded special characters
+        var parsed_params = try url_utils.QueryParser.parse(self.allocator, query_string);
+        // Ensure temporary parsing results are cleaned up when the function ends
+        defer url_utils.QueryParser.deinit(&parsed_params, self.allocator);
+
+        // Transfer parsed parameters to self.query, need to copy strings
+        var iter = parsed_params.iterator();
+        while (iter.next()) |entry| {
+            // Copy key
+            const key = entry.key_ptr.*;
+            const key_dup = try self.allocator.dupe(u8, key);
+            errdefer self.allocator.free(key_dup);
+
+            // Copy value
+            const value = entry.value_ptr.*;
+            const value_dup = try self.allocator.dupe(u8, value);
+            errdefer self.allocator.free(value_dup);
+
+            // Add the copied key-value pair to the query parameter map
+            try self.query.put(key_dup, value_dup);
         }
     }
 

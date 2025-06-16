@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const H3Event = @import("../core/event.zig").H3Event;
+const body_utils = @import("body.zig");
 
 /// Cookie attributes
 pub const CookieOptions = struct {
@@ -264,29 +265,9 @@ pub const CookieUtils = struct {
         return result.toOwnedSlice();
     }
 
-    /// URL decode a cookie value
+    /// URL decode a string
     pub fn urlDecode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
-        var result = std.ArrayList(u8).init(allocator);
-        defer result.deinit();
-
-        var i: usize = 0;
-        while (i < encoded.len) {
-            if (encoded[i] == '%' and i + 2 < encoded.len) {
-                const hex = encoded[i + 1 .. i + 3];
-                const byte = std.fmt.parseInt(u8, hex, 16) catch {
-                    try result.append(encoded[i]);
-                    i += 1;
-                    continue;
-                };
-                try result.append(byte);
-                i += 3;
-            } else {
-                try result.append(encoded[i]);
-                i += 1;
-            }
-        }
-
-        return result.toOwnedSlice();
+        return body_utils.urlDecode(allocator, encoded);
     }
 };
 

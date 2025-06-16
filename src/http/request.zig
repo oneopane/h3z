@@ -3,6 +3,8 @@
 const std = @import("std");
 const HttpMethod = @import("method.zig").HttpMethod;
 const Headers = @import("headers.zig").Headers;
+const url_utils = @import("../internal/url.zig");
+const body_utils = @import("../utils/body.zig");
 
 /// HTTP request structure
 pub const Request = struct {
@@ -47,29 +49,52 @@ pub const Request = struct {
     /// Deinitialize the request and free resources
     /// This function ensures that any owned memory, like the request body, is freed.
     pub fn deinit(self: *Request) void {
+        // Free body memory
         if (self.body) |b| {
-            // Only free if the body was allocated by this request's allocator
-            // This assumes setBody was used, which duplicates the input slice.
-            // If body is set externally as a const slice, it should not be freed here.
-            // To make this safer, we could add a flag indicating if body is owned.
-            // For now, we assume if self.body is not null, it was allocated by self.allocator.dupe
             self.allocator.free(b);
-            self.body = null; // Avoid double free on subsequent deinit calls
+            self.body = null; // Avoid double free in subsequent deinit calls
         }
+
+        // Free path memory (if not a static string)
+        if (self.path.len > 0 and !std.mem.eql(u8, self.path, "/") and !std.mem.eql(u8, self.path, "")) {
+            self.allocator.free(self.path);
+        }
+
+        // Free query memory
+        if (self.query) |q| {
+            self.allocator.free(q);
+            self.query = null;
+        }
+
+        // Free headers
         self.headers.deinit();
     }
 
     /// Reset the request for reuse in object pool
-    /// This function resets the request state and frees the body if it's owned.
+    /// This function resets the request state and frees all allocated memory.
     pub fn reset(self: *Request) void {
         self.method = .GET;
         self.url = "";
-        self.path = "";
-        self.query = null;
+
+        // Free body memory
         if (self.body) |b| {
             self.allocator.free(b);
             self.body = null;
         }
+
+        // Free path memory (if not a static string)
+        if (self.path.len > 0 and !std.mem.eql(u8, self.path, "/") and !std.mem.eql(u8, self.path, "")) {
+            self.allocator.free(self.path);
+        }
+        self.path = "";
+
+        // Free query memory
+        if (self.query) |q| {
+            self.allocator.free(q);
+            self.query = null;
+        }
+
+        // Clear headers
         self.headers.clearRetainingCapacity();
     }
 
@@ -86,15 +111,95 @@ pub const Request = struct {
     }
 
     /// Parse URL into path and query components
+    /// This function properly handles URL-encoded characters
     pub fn parseUrl(self: *Request, url: []const u8) !void {
+        // Free previous path if it exists and is not a static string
+        if (self.path.len > 0 and !std.mem.eql(u8, self.path, "/")) {
+            self.allocator.free(self.path);
+        }
+
+        // Free previous query if it exists
+        if (self.query) |q| {
+            self.allocator.free(q);
+            self.query = null;
+        }
+
+        // Store the original URL
         self.url = url;
 
-        if (std.mem.indexOf(u8, url, "?")) |query_start| {
-            self.path = url[0..query_start];
-            self.query = url[query_start + 1 ..];
-        } else {
-            self.path = url;
-            self.query = null;
+        // Try to use std.Uri.parse for robust URL parsing
+        if (std.Uri.parse(url)) |parsed_uri| {
+            // Handle path component based on its type
+            if (parsed_uri.path == .percent_encoded) {
+                const path_encoded = parsed_uri.path.percent_encoded;
+                // Decode the path to handle URL-encoded characters
+                const decoded_path = try url_utils.urlDecode(self.allocator, path_encoded);
+                self.path = decoded_path;
+            } else if (parsed_uri.path == .raw) {
+                const raw_path = parsed_uri.path.raw;
+                // For root path, use static string directly
+                if (std.mem.eql(u8, raw_path, "/")) {
+                    self.path = "/";
+                } else {
+                    // Check if the path contains URL encoded characters
+                    if (std.mem.indexOf(u8, raw_path, "%")) |_| {
+                        // If it contains percent signs, it might be URL encoded, decode it
+                        const decoded_path = try url_utils.urlDecode(self.allocator, raw_path);
+                        self.path = decoded_path;
+                    } else {
+                        self.path = try self.allocator.dupe(u8, raw_path);
+                    }
+                }
+            } else {
+                // For root path, use static string
+                self.path = "/";
+            }
+
+            // Handle query component based on its type
+            if (parsed_uri.query != null) {
+                const query = switch (parsed_uri.query.?) {
+                    .percent_encoded => |q| q,
+                    .raw => |q| q,
+                };
+                // Store the raw query string (still encoded)
+                self.query = try self.allocator.dupe(u8, query);
+            } else {
+                self.query = null;
+            }
+        } else |_| {
+            // Fallback to simple parsing if std.Uri.parse fails
+            if (std.mem.indexOf(u8, url, "?")) |query_start| {
+                // For root path, use static string directly
+                if (query_start == 1 and url[0] == '/') {
+                    self.path = "/";
+                } else {
+                    const path_part = url[0..query_start];
+                    // Check if the path contains URL encoded characters
+                    if (std.mem.indexOf(u8, path_part, "%")) |_| {
+                        // If it contains percent signs, it might be URL encoded, decode it
+                        const decoded_path = try url_utils.urlDecode(self.allocator, path_part);
+                        self.path = decoded_path;
+                    } else {
+                        self.path = try self.allocator.dupe(u8, path_part);
+                    }
+                }
+                self.query = try self.allocator.dupe(u8, url[query_start + 1 ..]);
+            } else {
+                // For root path, use static string directly
+                if (std.mem.eql(u8, url, "/")) {
+                    self.path = "/";
+                } else {
+                    // Check if the path contains URL encoded characters
+                    if (std.mem.indexOf(u8, url, "%")) |_| {
+                        // If it contains percent signs, it might be URL encoded, decode it
+                        const decoded_path = try url_utils.urlDecode(self.allocator, url);
+                        self.path = decoded_path;
+                    } else {
+                        self.path = try self.allocator.dupe(u8, url);
+                    }
+                }
+                self.query = null;
+            }
         }
     }
 
@@ -194,6 +299,11 @@ test "Request.parseUrl" {
     try request.parseUrl("/api/users");
     try std.testing.expectEqualStrings("/api/users", request.path);
     try std.testing.expectEqual(@as(?[]const u8, null), request.query);
+
+    // Test with URL-encoded characters
+    try request.parseUrl("/api/users/John%20Doe?query=Hello%20World");
+    try std.testing.expectEqualStrings("/api/users/John Doe", request.path);
+    try std.testing.expectEqualStrings("query=Hello%20World", request.query.?);
 }
 
 test "Request.headers" {

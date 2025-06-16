@@ -321,7 +321,7 @@ fn extractDispositionValue(header: []const u8, param: []const u8) ?[]const u8 {
 }
 
 /// URL decode a string
-fn urlDecode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
+pub fn urlDecode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
     var result = std.ArrayList(u8).init(allocator);
     defer result.deinit();
 

@@ -109,69 +109,91 @@ pub const Url = struct {
     }
 
     /// Get default port for scheme
-    pub fn getDefaultPort(self: Url) ?u16 {
+    pub fn getDefaultPort(self: Url) u16 {
         if (self.scheme) |scheme| {
-            if (std.mem.eql(u8, scheme, "http")) return 80;
-            if (std.mem.eql(u8, scheme, "https")) return 443;
-            if (std.mem.eql(u8, scheme, "ftp")) return 21;
-            if (std.mem.eql(u8, scheme, "ssh")) return 22;
+            if (std.mem.eql(u8, scheme, "http")) {
+                return 80;
+            } else if (std.mem.eql(u8, scheme, "https")) {
+                return 443;
+            } else if (std.mem.eql(u8, scheme, "ftp")) {
+                return 21;
+            } else if (std.mem.eql(u8, scheme, "ssh")) {
+                return 22;
+            }
         }
-        return null;
+        return 0;
     }
 
-    /// Get effective port (explicit or default)
-    pub fn getPort(self: Url) ?u16 {
+    /// Get port (explicit or default)
+    pub fn getPort(self: Url) u16 {
         return self.port orelse self.getDefaultPort();
     }
 
-    /// Check if URL is absolute
+    /// Check if URL is absolute (has scheme)
     pub fn isAbsolute(self: Url) bool {
         return self.scheme != null;
     }
 
-    /// Check if URL is secure (HTTPS)
+    /// Check if URL uses secure scheme (https, wss, etc)
     pub fn isSecure(self: Url) bool {
         if (self.scheme) |scheme| {
-            return std.mem.eql(u8, scheme, "https");
+            return std.mem.eql(u8, scheme, "https") or
+                std.mem.eql(u8, scheme, "wss") or
+                std.mem.eql(u8, scheme, "ftps") or
+                std.mem.eql(u8, scheme, "sftp");
         }
         return false;
     }
 
-    /// Reconstruct URL string
+    /// Convert URL back to string
     pub fn toString(self: Url, allocator: std.mem.Allocator) ![]u8 {
         var result = std.ArrayList(u8).init(allocator);
         defer result.deinit();
 
+        // Add scheme
         if (self.scheme) |scheme| {
-            try result.writer().print("{s}://", .{scheme});
+            try result.appendSlice(scheme);
+            try result.appendSlice("://");
         }
 
+        // Add auth
         if (self.username) |username| {
-            try result.writer().print("{s}", .{username});
+            try result.appendSlice(username);
             if (self.password) |password| {
-                try result.writer().print(":{s}", .{password});
+                try result.append(':');
+                try result.appendSlice(password);
             }
-            try result.writer().writeAll("@");
+            try result.append('@');
         }
 
+        // Add host
         if (self.host) |host| {
-            try result.writer().print("{s}", .{host});
+            try result.appendSlice(host);
         }
 
+        // Add port
         if (self.port) |port| {
-            if (self.getDefaultPort() != port) {
-                try result.writer().print(":{d}", .{port});
+            // Only add port if it's not the default for the scheme
+            const default_port = self.getDefaultPort();
+            if (default_port == 0 or port != default_port) {
+                try result.append(':');
+                try result.writer().print("{}", .{port});
             }
         }
 
-        try result.writer().print("{s}", .{self.path});
+        // Add path
+        try result.appendSlice(self.path);
 
+        // Add query
         if (self.query) |query| {
-            try result.writer().print("?{s}", .{query});
+            try result.append('?');
+            try result.appendSlice(query);
         }
 
+        // Add fragment
         if (self.fragment) |fragment| {
-            try result.writer().print("#{s}", .{fragment});
+            try result.append('#');
+            try result.appendSlice(fragment);
         }
 
         return result.toOwnedSlice();
@@ -180,11 +202,10 @@ pub const Url = struct {
 
 /// Query string parser
 pub const QueryParser = struct {
-    /// Parse query string into key-value map
-    pub fn parse(allocator: std.mem.Allocator, query_string: []const u8) !std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage) {
-        var result = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator);
+    /// Parse query string into key-value pairs
+    pub fn parse(allocator: std.mem.Allocator, query: []const u8) !std.StringHashMap([]const u8) {
+        var result = std.StringHashMap([]const u8).init(allocator);
         errdefer {
-            // Clean up any allocated keys/values on error
             var iter = result.iterator();
             while (iter.next()) |entry| {
                 allocator.free(entry.key_ptr.*);
@@ -193,46 +214,67 @@ pub const QueryParser = struct {
             result.deinit();
         }
 
-        if (query_string.len == 0) return result;
+        var iter = std.mem.splitScalar(u8, query, '&');
+        while (iter.next()) |pair| {
+            if (pair.len == 0) continue;
 
-        var pairs = std.mem.splitScalar(u8, query_string, '&');
-        while (pairs.next()) |pair| {
             if (std.mem.indexOf(u8, pair, "=")) |eq_pos| {
-                const key = try urlDecode(allocator, pair[0..eq_pos]);
+                const key_encoded = pair[0..eq_pos];
+                const value_encoded = pair[eq_pos + 1 ..];
+
+                const key = try urlDecode(allocator, key_encoded);
                 errdefer allocator.free(key);
-                const value = try urlDecode(allocator, pair[eq_pos + 1 ..]);
+
+                const value = try urlDecode(allocator, value_encoded);
                 errdefer allocator.free(value);
+
+                // If key already exists, free old values
+                if (result.getEntry(key)) |entry| {
+                    allocator.free(entry.key_ptr.*);
+                    allocator.free(entry.value_ptr.*);
+                }
+
                 try result.put(key, value);
             } else {
-                const key = try urlDecode(allocator, pair);
+                // Key with no value
+                const key_encoded = pair;
+                const key = try urlDecode(allocator, key_encoded);
                 errdefer allocator.free(key);
-                const empty_value = try allocator.dupe(u8, "");
-                errdefer allocator.free(empty_value);
-                try result.put(key, empty_value);
+
+                const value = try allocator.dupe(u8, "");
+                errdefer allocator.free(value);
+
+                // If key already exists, free old values
+                if (result.getEntry(key)) |entry| {
+                    allocator.free(entry.key_ptr.*);
+                    allocator.free(entry.value_ptr.*);
+                }
+
+                try result.put(key, value);
             }
         }
 
         return result;
     }
 
-    /// Free the memory allocated by parse()
-    pub fn deinit(params: *std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage), allocator: std.mem.Allocator) void {
-        var iter = params.iterator();
+    /// Free resources used by query parameters
+    pub fn deinit(query_params: *std.StringHashMap([]const u8), allocator: std.mem.Allocator) void {
+        var iter = query_params.iterator();
         while (iter.next()) |entry| {
             allocator.free(entry.key_ptr.*);
             allocator.free(entry.value_ptr.*);
         }
-        params.deinit();
+        query_params.deinit();
     }
 
-    /// Build query string from key-value map
-    pub fn build(allocator: std.mem.Allocator, params: std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage)) ![]u8 {
+    /// Build query string from key-value pairs
+    pub fn build(allocator: std.mem.Allocator, params: std.StringHashMap([]const u8)) ![]u8 {
         var result = std.ArrayList(u8).init(allocator);
         defer result.deinit();
 
-        var iterator = params.iterator();
         var first = true;
-        while (iterator.next()) |entry| {
+        var iter = params.iterator();
+        while (iter.next()) |entry| {
             if (!first) {
                 try result.append('&');
             }
@@ -240,17 +282,20 @@ pub const QueryParser = struct {
 
             const encoded_key = try urlEncode(allocator, entry.key_ptr.*);
             defer allocator.free(encoded_key);
+            try result.appendSlice(encoded_key);
+
+            try result.append('=');
+
             const encoded_value = try urlEncode(allocator, entry.value_ptr.*);
             defer allocator.free(encoded_value);
-
-            try result.writer().print("{s}={s}", .{ encoded_key, encoded_value });
+            try result.appendSlice(encoded_value);
         }
 
         return result.toOwnedSlice();
     }
 };
 
-/// Path manipulation utilities
+/// Path utilities
 pub const PathUtils = struct {
     /// Join path segments
     pub fn join(allocator: std.mem.Allocator, segments: []const []const u8) ![]u8 {
@@ -258,37 +303,48 @@ pub const PathUtils = struct {
         defer result.deinit();
 
         for (segments, 0..) |segment, i| {
-            if (i > 0 and !std.mem.endsWith(u8, result.items, "/") and !std.mem.startsWith(u8, segment, "/")) {
+            if (i > 0 and segment.len > 0 and segment[0] != '/') {
                 try result.append('/');
             }
-            try result.appendSlice(segment);
+
+            // Skip empty segments except the first one
+            if (segment.len == 0 and i > 0) continue;
+
+            // Remove trailing slash except for root
+            const seg_len = if (segment.len > 1 and segment[segment.len - 1] == '/') segment.len - 1 else segment.len;
+            try result.appendSlice(segment[0..seg_len]);
+        }
+
+        if (result.items.len == 0) {
+            try result.append('/');
         }
 
         return result.toOwnedSlice();
     }
 
-    /// Normalize path (resolve . and ..)
+    /// Normalize path (resolve .., ., and duplicate slashes)
     pub fn normalize(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+        var result = std.ArrayList(u8).init(allocator);
+        defer result.deinit();
+
         var segments = std.ArrayList([]const u8).init(allocator);
         defer segments.deinit();
 
-        var parts = std.mem.splitScalar(u8, path, '/');
-        while (parts.next()) |part| {
-            if (std.mem.eql(u8, part, ".") or part.len == 0) {
+        var iter = std.mem.tokenizeScalar(u8, path, '/');
+        while (iter.next()) |segment| {
+            if (segment.len == 0 or std.mem.eql(u8, segment, ".")) {
                 continue;
-            } else if (std.mem.eql(u8, part, "..")) {
+            } else if (std.mem.eql(u8, segment, "..")) {
                 if (segments.items.len > 0) {
                     _ = segments.pop();
                 }
             } else {
-                try segments.append(part);
+                try segments.append(segment);
             }
         }
 
-        var result = std.ArrayList(u8).init(allocator);
-        defer result.deinit();
-
-        if (std.mem.startsWith(u8, path, "/")) {
+        // Handle absolute paths
+        if (path.len > 0 and path[0] == '/') {
             try result.append('/');
         }
 
@@ -351,7 +407,7 @@ pub fn decode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 // Helper functions
 
 /// URL encode a string
-fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+pub fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var result = std.ArrayList(u8).init(allocator);
     defer result.deinit();
 
@@ -373,7 +429,7 @@ fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 }
 
 /// URL decode a string
-fn urlDecode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+pub fn urlDecode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var result = std.ArrayList(u8).init(allocator);
     defer result.deinit();
 

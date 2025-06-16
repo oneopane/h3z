@@ -226,7 +226,7 @@ pub fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
 
 /// URL decode a string
 pub fn urlDecode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    return internal.url.decode(allocator, input);
+    return utils.body.urlDecode(allocator, input);
 }
 
 /// Get MIME type for file extension
