@@ -17,6 +17,9 @@ pub const Response = struct {
     /// Response body
     body: ?[]const u8,
 
+    /// Whether the body was allocated and needs to be freed
+    body_owned: bool,
+
     /// HTTP version (e.g., "1.1", "2.0")
     version: []const u8,
 
@@ -35,6 +38,7 @@ pub const Response = struct {
             .status = .ok,
             .headers = Headers.init(allocator),
             .body = null,
+            .body_owned = false,
             .version = "1.1",
             .sent = false,
             .finished = false,
@@ -44,16 +48,40 @@ pub const Response = struct {
 
     /// Deinitialize the response and free resources
     pub fn deinit(self: *Response) void {
+        // Free all header keys and values
+        var iterator = self.headers.iterator();
+        while (iterator.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
         self.headers.deinit();
+
+        // Free body if it was allocated by us
+        if (self.body_owned and self.body != null) {
+            self.allocator.free(self.body.?);
+        }
     }
 
     /// Reset the response for reuse in object pool
     pub fn reset(self: *Response) void {
+        // Free all header keys and values before clearing
+        var iterator = self.headers.iterator();
+        while (iterator.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.headers.clearRetainingCapacity();
+
+        // Free body if it was allocated by us
+        if (self.body_owned and self.body != null) {
+            self.allocator.free(self.body.?);
+        }
+
         self.status = .ok;
         self.body = null;
+        self.body_owned = false;
         self.sent = false;
         self.finished = false;
-        self.headers.clearRetainingCapacity();
     }
 
     /// Set the status code
@@ -63,7 +91,17 @@ pub const Response = struct {
 
     /// Set a header value
     pub fn setHeader(self: *Response, name: []const u8, value: []const u8) !void {
-        try self.headers.put(name, value);
+        // Check if header already exists and free old memory
+        if (self.headers.getEntry(name)) |existing| {
+            self.allocator.free(existing.key_ptr.*);
+            self.allocator.free(existing.value_ptr.*);
+            _ = self.headers.remove(name);
+        }
+
+        // Create copies of name and value to ensure they persist
+        const name_copy = try self.allocator.dupe(u8, name);
+        const value_copy = try self.allocator.dupe(u8, value);
+        try self.headers.put(name_copy, value_copy);
     }
 
     /// Get a header value by name
@@ -88,29 +126,55 @@ pub const Response = struct {
 
     /// Set the Content-Length header
     pub fn setContentLength(self: *Response, length: usize) !void {
-        // Use a stack buffer for the content-length string to avoid allocation
-        var buf: [32]u8 = undefined;
-        const length_str = try std.fmt.bufPrint(buf[0..], "{d}", .{length});
+        // Allocate memory for the content-length string to ensure it persists
+        const length_str = try std.fmt.allocPrint(self.allocator, "{d}", .{length});
+        defer self.allocator.free(length_str); // Free the temporary string after use
         try self.setHeader(HeaderNames.CONTENT_LENGTH, length_str);
     }
 
     /// Set response body as text
     pub fn setText(self: *Response, text: []const u8) !void {
-        self.body = text;
+        // Free old body if it was owned
+        if (self.body_owned and self.body != null) {
+            self.allocator.free(self.body.?);
+        }
+
+        // Copy the text to ensure we own the memory
+        const body_copy = try self.allocator.dupe(u8, text);
+        self.body = body_copy;
+        self.body_owned = true;
+
         try self.setHeader(HeaderNames.CONTENT_TYPE, "text/plain; charset=utf-8");
         try self.setContentLength(text.len);
     }
 
     /// Set response body as HTML
     pub fn setHtml(self: *Response, html: []const u8) !void {
-        self.body = html;
+        // Free old body if it was owned
+        if (self.body_owned and self.body != null) {
+            self.allocator.free(self.body.?);
+        }
+
+        // Copy the HTML to ensure we own the memory
+        const body_copy = try self.allocator.dupe(u8, html);
+        self.body = body_copy;
+        self.body_owned = true;
+
         try self.setHeader(HeaderNames.CONTENT_TYPE, "text/html; charset=utf-8");
         try self.setContentLength(html.len);
     }
 
     /// Set response body as JSON
     pub fn setJson(self: *Response, json: []const u8) !void {
-        self.body = json;
+        // Free old body if it was owned
+        if (self.body_owned and self.body != null) {
+            self.allocator.free(self.body.?);
+        }
+
+        // Copy the JSON to ensure we own the memory
+        const body_copy = try self.allocator.dupe(u8, json);
+        self.body = body_copy;
+        self.body_owned = true;
         try self.setHeader(HeaderNames.CONTENT_TYPE, "application/json; charset=utf-8");
         try self.setContentLength(json.len);
     }
@@ -129,24 +193,28 @@ pub const Response = struct {
         const body_copy = try self.allocator.dupe(u8, json_str);
         errdefer self.allocator.free(body_copy); // Free new allocation if subsequent operations fail
 
-        // Store old body pointer for cleanup after successful new allocation
-        const old_body = self.body;
+        // Free old body if it was owned
+        if (self.body_owned and self.body != null) {
+            self.allocator.free(self.body.?);
+        }
 
         // Update body pointer and content length
         self.body = body_copy;
+        self.body_owned = true;
         try self.setContentLength(body_copy.len);
-
-        // Free old body only after successful update
-        if (old_body) |ptr| {
-            self.allocator.free(ptr);
-        }
     }
 
     /// Set a redirect response
     pub fn redirect(self: *Response, location: []const u8, status: HttpStatus) !void {
+        // Free old body if it was owned
+        if (self.body_owned and self.body != null) {
+            self.allocator.free(self.body.?);
+        }
+
         self.status = status;
         try self.setHeader(HeaderNames.LOCATION, location);
         self.body = null;
+        self.body_owned = false;
     }
 
     /// Set an error response
