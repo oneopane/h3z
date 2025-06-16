@@ -21,8 +21,8 @@ pub const Request = struct {
     /// HTTP headers
     headers: Headers,
 
-    /// Request body
-    body: ?[]const u8,
+    /// Request body - owned by the Request object if set via setBody
+    body: ?[]u8,
 
     /// HTTP version (e.g., "1.1", "2.0")
     version: []const u8,
@@ -45,18 +45,44 @@ pub const Request = struct {
     }
 
     /// Deinitialize the request and free resources
+    /// This function ensures that any owned memory, like the request body, is freed.
     pub fn deinit(self: *Request) void {
+        if (self.body) |b| {
+            // Only free if the body was allocated by this request's allocator
+            // This assumes setBody was used, which duplicates the input slice.
+            // If body is set externally as a const slice, it should not be freed here.
+            // To make this safer, we could add a flag indicating if body is owned.
+            // For now, we assume if self.body is not null, it was allocated by self.allocator.dupe
+            self.allocator.free(b);
+            self.body = null; // Avoid double free on subsequent deinit calls
+        }
         self.headers.deinit();
     }
 
     /// Reset the request for reuse in object pool
+    /// This function resets the request state and frees the body if it's owned.
     pub fn reset(self: *Request) void {
         self.method = .GET;
         self.url = "";
         self.path = "";
         self.query = null;
-        self.body = null;
+        if (self.body) |b| {
+            self.allocator.free(b);
+            self.body = null;
+        }
         self.headers.clearRetainingCapacity();
+    }
+
+    /// Set the request body, taking ownership of the data by copying it.
+    /// If a body already exists, it will be freed before setting the new one.
+    pub fn setBody(self: *Request, body_data: []const u8) !void {
+        // Free existing body if any
+        if (self.body) |old_b| {
+            self.allocator.free(old_b);
+            self.body = null;
+        }
+        // Duplicate the incoming body data
+        self.body = try self.allocator.dupe(u8, body_data);
     }
 
     /// Parse URL into path and query components

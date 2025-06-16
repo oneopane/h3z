@@ -116,6 +116,7 @@ pub const Response = struct {
     }
 
     /// Set response body as JSON from a struct
+    /// This function safely handles memory allocation and deallocation to prevent double-free issues
     pub fn setJsonValue(self: *Response, value: anytype) !void {
         // Use allocator for dynamic JSON serialization to avoid buffer size limits
         const json_str = try std.json.stringifyAlloc(self.allocator, value, .{});
@@ -126,11 +127,19 @@ pub const Response = struct {
 
         // Copy JSON string to response body
         const body_copy = try self.allocator.dupe(u8, json_str);
-        if (self.body) |old_body| {
-            self.allocator.free(old_body);
-        }
+        errdefer self.allocator.free(body_copy); // Free new allocation if subsequent operations fail
+
+        // Store old body pointer for cleanup after successful new allocation
+        const old_body = self.body;
+
+        // Update body pointer and content length
         self.body = body_copy;
         try self.setContentLength(body_copy.len);
+
+        // Free old body only after successful update
+        if (old_body) |ptr| {
+            self.allocator.free(ptr);
+        }
     }
 
     /// Set a redirect response

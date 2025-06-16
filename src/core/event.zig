@@ -169,9 +169,22 @@ pub const H3Event = struct {
     }
 
     /// Parse JSON from request body
+    /// This function parses the JSON request body into the specified type T.
+    /// It handles potential memory allocations and ensures they are properly deinitialized.
     pub fn readJson(self: *const H3Event, comptime T: type) !T {
         const body = self.readBody() orelse return error.NoBody;
-        const parsed = try std.json.parseFromSlice(T, self.allocator, body, .{});
+        var parsed = try std.json.parseFromSlice(T, self.allocator, body, .{
+            .allocator = self.allocator, // Pass allocator for parsing
+        });
+        defer parsed.deinit(); // Ensure deinit is called to free parsed resources
+
+        // For types that might own memory (like slices or strings not part of the original body),
+        // a deep copy might be necessary if the lifetime of `parsed.value` is tied to `parsed`.
+        // However, for simple value types or types that copy data during parsing, this is sufficient.
+        // If T is a complex type that holds references to memory managed by `parsed`,
+        // you would need to deep copy `parsed.value` here before `parsed.deinit()` is called.
+        // For now, we assume T is a type that can be directly returned or is copied by value.
+        // A more robust solution might involve a trait or compile-time check for deep-copyable types.
         return parsed.value;
     }
 

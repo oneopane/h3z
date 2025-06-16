@@ -130,7 +130,7 @@ pub const LibxevAdapter = struct {
             // Parse body
             const remaining = lines.rest();
             if (remaining.len > 0) {
-                event.request.body = remaining;
+                event.request.setBody(remaining) catch {};
             }
 
             try event.parseQuery();
