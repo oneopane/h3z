@@ -85,6 +85,7 @@ pub const Request = struct {
         // Free path memory (if not a static string)
         if (self.path.len > 0 and !std.mem.eql(u8, self.path, "/") and !std.mem.eql(u8, self.path, "")) {
             self.allocator.free(self.path);
+            // Set to empty string immediately after freeing
         }
         self.path = "";
 
@@ -94,8 +95,29 @@ pub const Request = struct {
             self.query = null;
         }
 
-        // Clear headers
+        // Safely free all header key-value pairs
+        var keys = std.ArrayList([]const u8).init(self.allocator);
+        var values = std.ArrayList([]const u8).init(self.allocator);
+        defer keys.deinit();
+        defer values.deinit();
+
+        // Collect all key-value pairs
+        var iterator = self.headers.iterator();
+        while (iterator.next()) |entry| {
+            keys.append(entry.key_ptr.*) catch continue;
+            values.append(entry.value_ptr.*) catch continue;
+        }
+
+        // Clear the hash map
         self.headers.clearRetainingCapacity();
+
+        // Free all collected key-value pairs
+        for (keys.items) |key| {
+            self.allocator.free(key);
+        }
+        for (values.items) |value| {
+            self.allocator.free(value);
+        }
     }
 
     /// Set the request body, taking ownership of the data by copying it.

@@ -82,19 +82,9 @@ pub const LibxevAdapter = struct {
             var use_pool = false;
 
             if (self.adapter.app.event_pool) |*pool| {
-                if (pool.acquire()) |acquired_event| {
-                    event = acquired_event;
-                    use_pool = true;
-                } else |_| {
-                    // Pool exhausted, create new event but limit total count
-                    if (self.adapter.connections.items.len > 1000) {
-                        return error.TooManyConnections;
-                    }
-                    const new_event = try self.context.allocator.create(H3Event);
-                    new_event.* = H3Event.init(self.context.allocator);
-                    event = new_event;
-                    use_pool = false;
-                }
+                // Attempt to acquire event from pool
+                event = try pool.acquire();
+                use_pool = true;
             } else {
                 // Limit total connections even without pool
                 if (self.adapter.connections.items.len > 1000) {
@@ -277,15 +267,33 @@ pub const LibxevAdapter = struct {
 
         /// Close the connection
         fn close(self: *Connection, loop: *xev.Loop) void {
-            // Check if already closing to avoid double close
-            if (self.context.request_count == std.math.maxInt(u32)) {
+            // Use atomic operation to mark connection state, prevent duplicate close
+            const old_value = @atomicRmw(u32, &self.context.request_count, .Xchg, std.math.maxInt(u32), .seq_cst);
+            if (old_value == std.math.maxInt(u32)) {
+                logger.logDefault(.debug, .connection, "[Connection] Already closing, skipping duplicate close", .{});
                 return; // Already closing
             }
 
-            // Mark as closing
-            self.context.request_count = std.math.maxInt(u32);
+            // Remove from connection list before closing to avoid race conditions during callback
+            logger.logDefault(.debug, .connection, "[Connection] Removing from connection list", .{});
 
-            // Use the TCP close method
+            var found = false;
+            for (self.adapter.connections.items, 0..) |conn, i| {
+                if (conn == self) {
+                    _ = self.adapter.connections.swapRemove(i);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                logger.logDefault(.warn, .connection, "[Connection] Connection not found in list during close", .{});
+            }
+
+            // Safely close the TCP connection
+            logger.logDefault(.debug, .connection, "[Connection] Closing connection", .{});
+
+            // Use asynchronous close to avoid state conflicts
             self.tcp.close(loop, &self.close_completion, Connection, self, onCloseCallback);
         }
 
@@ -618,8 +626,10 @@ pub const LibxevAdapter = struct {
         _ = loop;
         _ = completion;
         _ = tcp;
+
+        // Safely handle close errors
         result catch |err| {
-            logger.logDefault(.err, .connection, "Close operation failed: {}", .{err});
+            logger.logDefault(.err, .connection, "[Connection Close] Operation failed: {}", .{err});
         };
 
         // Safely check connection object
@@ -630,19 +640,18 @@ pub const LibxevAdapter = struct {
 
         const conn = conn_opt.?;
 
-        // Only log, don't perform other operations
-        logger.logDefault(.debug, .connection, "[Connection Close] Connection closing", .{});
+        // Log connection close information
+        logger.logDefault(.debug, .connection, "[Connection Close] Connection closing, port: {}", .{conn.context.remote_address.getPort()});
 
-        // Log adapter information
-        logger.logDefault(.debug, .connection, "[Connection Close] Adapter: {*}", .{conn.adapter});
+        // Note: Connection has already been removed from the connection list in close() function
+        // No need to remove it again here, avoiding race conditions
 
-        // Mark connection as closed but don't free memory
-        // This will be handled in the next cleanup cycle
-        logger.logDefault(.debug, .connection, "[Connection Close] Marking connection as closed", .{});
-
-        // Safely call deinit method, only logging
+        // Safely call deinit method
         conn.deinit();
-        logger.logDefault(.debug, .connection, "[Connection Close] Cleanup complete", .{});
+
+        // Free connection memory
+        conn.adapter.allocator.destroy(conn);
+        logger.logDefault(.debug, .connection, "[Connection Close] Connection memory freed", .{});
 
         return .disarm;
     }

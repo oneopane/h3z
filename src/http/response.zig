@@ -64,17 +64,35 @@ pub const Response = struct {
 
     /// Reset the response for reuse in object pool
     pub fn reset(self: *Response) void {
-        // Free all header keys and values before clearing
+        // Safely free all header key-value pairs
+        // Use temporary arrays to store key-value pairs that need to be freed
+        var keys = std.ArrayList([]const u8).init(self.allocator);
+        var values = std.ArrayList([]const u8).init(self.allocator);
+        defer keys.deinit();
+        defer values.deinit();
+
+        // Collect all key-value pairs
         var iterator = self.headers.iterator();
         while (iterator.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            self.allocator.free(entry.value_ptr.*);
+            keys.append(entry.key_ptr.*) catch continue;
+            values.append(entry.value_ptr.*) catch continue;
         }
+
+        // Clear the hash map
         self.headers.clearRetainingCapacity();
+
+        // Free all collected key-value pairs
+        for (keys.items) |key| {
+            self.allocator.free(key);
+        }
+        for (values.items) |value| {
+            self.allocator.free(value);
+        }
 
         // Free body if it was allocated by us
         if (self.body_owned and self.body != null) {
             self.allocator.free(self.body.?);
+            self.body = null; // Set to null immediately after freeing
         }
 
         self.status = .ok;

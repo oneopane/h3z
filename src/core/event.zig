@@ -79,29 +79,77 @@ pub const H3Event = struct {
         self.request.reset();
         self.response.reset();
 
-        // Free key-value pairs in the context hash map
+        // Safely free key-value pairs in the context hash map
+        var context_keys = std.ArrayList([]const u8).init(self.allocator);
+        var context_values = std.ArrayList([]const u8).init(self.allocator);
+        defer context_keys.deinit();
+        defer context_values.deinit();
+
+        // Collect all key-value pairs
         var context_iter = self.context.iterator();
         while (context_iter.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            self.allocator.free(entry.value_ptr.*);
+            context_keys.append(entry.key_ptr.*) catch continue;
+            context_values.append(entry.value_ptr.*) catch continue;
         }
+
+        // Clear the hash map
         self.context.clearRetainingCapacity();
 
-        // Free key-value pairs in the params hash map
+        // Free all collected key-value pairs
+        for (context_keys.items) |key| {
+            self.allocator.free(key);
+        }
+        for (context_values.items) |value| {
+            self.allocator.free(value);
+        }
+
+        // Safely free key-value pairs in the params hash map
+        var params_keys = std.ArrayList([]const u8).init(self.allocator);
+        var params_values = std.ArrayList([]const u8).init(self.allocator);
+        defer params_keys.deinit();
+        defer params_values.deinit();
+
+        // Collect all key-value pairs
         var params_iter = self.params.iterator();
         while (params_iter.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            self.allocator.free(entry.value_ptr.*);
+            params_keys.append(entry.key_ptr.*) catch continue;
+            params_values.append(entry.value_ptr.*) catch continue;
         }
+
+        // Clear the hash map
         self.params.clearRetainingCapacity();
 
-        // Free key-value pairs in the query hash map
+        // Free all collected key-value pairs
+        for (params_keys.items) |key| {
+            self.allocator.free(key);
+        }
+        for (params_values.items) |value| {
+            self.allocator.free(value);
+        }
+
+        // Safely free key-value pairs in the query hash map
+        var query_keys = std.ArrayList([]const u8).init(self.allocator);
+        var query_values = std.ArrayList([]const u8).init(self.allocator);
+        defer query_keys.deinit();
+        defer query_values.deinit();
+
+        // Collect all key-value pairs
         var query_iter = self.query.iterator();
         while (query_iter.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            self.allocator.free(entry.value_ptr.*);
+            query_keys.append(entry.key_ptr.*) catch continue;
+            query_values.append(entry.value_ptr.*) catch continue;
         }
+
+        // Clear the hash map
         self.query.clearRetainingCapacity();
+
+        // Free all collected key-value pairs
+        for (query_keys.items) |key| {
+            self.allocator.free(key);
+        }
+        for (query_values.items) |value| {
+            self.allocator.free(value);
+        }
     }
 
     /// Get a context value

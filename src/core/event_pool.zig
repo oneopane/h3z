@@ -37,13 +37,57 @@ pub const EventPool = struct {
         if (self.events.items.len > 0) {
             const event = self.events.pop();
             if (event) |e| {
-                e.reset();
+                // Efficiently reset event object without reallocating memory
+                // Use clearRetainingCapacity instead of clearAndFree
+                // This preserves the hash map capacity, improving performance
+                e.context.clearRetainingCapacity();
+                e.params.clearRetainingCapacity();
+                e.query.clearRetainingCapacity();
+
+                // Reset request object
+                e.request.method = .GET;
+                e.request.url = "";
+
+                // Only free path memory when necessary
+                if (e.request.path.len > 0 and !std.mem.eql(u8, e.request.path, "/") and !std.mem.eql(u8, e.request.path, "")) {
+                    e.allocator.free(e.request.path);
+                }
+                e.request.path = "";
+
+                // Free request body
+                if (e.request.body) |b| {
+                    e.allocator.free(b);
+                    e.request.body = null;
+                }
+
+                // Free query string
+                if (e.request.query) |q| {
+                    e.allocator.free(q);
+                    e.request.query = null;
+                }
+
+                // Clear request headers, retain capacity
+                e.request.headers.clearRetainingCapacity();
+
+                // Reset response object
+                e.response.status = .ok;
+                if (e.response.body_owned and e.response.body != null) {
+                    e.allocator.free(e.response.body.?);
+                }
+                e.response.body = null;
+                e.response.body_owned = false;
+                e.response.sent = false;
+                e.response.finished = false;
+
+                // Clear response headers, retain capacity
+                e.response.headers.clearRetainingCapacity();
+
                 self.reuse_count += 1;
                 return e;
             }
         }
 
-        // Create new event if pool is empty
+        // Create a new event
         const event = try self.allocator.create(H3Event);
         event.* = H3Event.init(self.allocator);
         self.created_count += 1;
@@ -53,14 +97,15 @@ pub const EventPool = struct {
     /// Release an event back to the pool
     pub fn release(self: *EventPool, event: *H3Event) void {
         if (self.events.items.len < self.max_size) {
-            event.reset();
+            // Put the object back into the pool directly without resetting
+            // Reset operation will be performed on next acquire
             self.events.append(event) catch {
-                // If append fails, destroy the event
+                // Only destroy the object if adding to pool fails
                 event.deinit();
                 self.allocator.destroy(event);
             };
         } else {
-            // Pool is full, destroy the event
+            // Pool is full, destroy the object
             event.deinit();
             self.allocator.destroy(event);
         }
