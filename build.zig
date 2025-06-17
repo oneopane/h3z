@@ -15,6 +15,31 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    // Logging options
+    const log_level = b.option(
+        std.log.Level,
+        "log-level",
+        "Set the log level (default: debug)",
+    ) orelse .debug;
+
+    const enable_connection_logs = b.option(
+        bool,
+        "log-connection",
+        "Enable connection logs (default: true)",
+    ) orelse true;
+
+    const enable_request_logs = b.option(
+        bool,
+        "log-request",
+        "Enable request logs (default: true)",
+    ) orelse true;
+
+    const enable_performance_logs = b.option(
+        bool,
+        "log-performance",
+        "Enable performance logs (default: true)",
+    ) orelse true;
+
     // Add libxev dependency
     const libxev_dep = b.dependency("libxev", .{
         .target = target,
@@ -33,6 +58,16 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    // Add logging options as build options
+    const log_options = b.addOptions();
+    log_options.addOption(std.log.Level, "log_level", log_level);
+    log_options.addOption(bool, "enable_connection_logs", enable_connection_logs);
+    log_options.addOption(bool, "enable_request_logs", enable_request_logs);
+    log_options.addOption(bool, "enable_performance_logs", enable_performance_logs);
+
+    // Add options to module
+    lib_mod.addImport("log_options", log_options.createModule());
 
     // Add libxev module to our library
     lib_mod.addImport("xev", libxev_dep.module("xev"));
@@ -118,11 +153,17 @@ pub fn build(b: *std.Build) void {
         .root_module = lib_mod,
     });
 
+    // Add log options to test build
+    lib_unit_tests.root_module.addImport("log_options", log_options.createModule());
+
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
     const exe_unit_tests = b.addTest(.{
         .root_module = exe_mod,
     });
+
+    // Add log options to test build
+    exe_unit_tests.root_module.addImport("log_options", log_options.createModule());
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
@@ -143,6 +184,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     test_all.root_module.addImport("h3", lib_mod);
+    test_all.root_module.addImport("log_options", log_options.createModule());
 
     // Create test_utils module for test_all
     const test_utils_mod_all = b.addModule("test_utils_all", .{
@@ -174,6 +216,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     benchmark_tests.root_module.addImport("h3", lib_mod);
+    benchmark_tests.root_module.addImport("log_options", log_options.createModule());
 
     const run_benchmarks = b.addRunArtifact(benchmark_tests);
     const benchmark_step = b.step("benchmark", "Run performance benchmarks");
@@ -188,6 +231,13 @@ fn addExample(
     name: []const u8,
     path: []const u8,
 ) void {
+    // Create log options for this example
+    const example_log_options = b.addOptions();
+    example_log_options.addOption(std.log.Level, "log_level", .debug);
+    example_log_options.addOption(bool, "enable_connection_logs", true);
+    example_log_options.addOption(bool, "enable_request_logs", true);
+    example_log_options.addOption(bool, "enable_performance_logs", true);
+
     const example_exe = b.addExecutable(.{
         .name = name,
         .root_source_file = b.path(path),
@@ -196,6 +246,7 @@ fn addExample(
     });
 
     example_exe.root_module.addImport("h3", lib_mod);
+    example_exe.root_module.addImport("log_options", example_log_options.createModule());
     b.installArtifact(example_exe);
 
     const run_cmd = b.addRunArtifact(example_exe);
@@ -219,12 +270,20 @@ fn addTestCategory(
     category: []const u8,
     path: []const u8,
 ) void {
+    // Create log options for this test category
+    const test_log_options = b.addOptions();
+    test_log_options.addOption(std.log.Level, "log_level", .debug);
+    test_log_options.addOption(bool, "enable_connection_logs", true);
+    test_log_options.addOption(bool, "enable_request_logs", true);
+    test_log_options.addOption(bool, "enable_performance_logs", true);
+
     const test_exe = b.addTest(.{
         .root_source_file = b.path(path),
         .target = target,
         .optimize = optimize,
     });
     test_exe.root_module.addImport("h3", lib_mod);
+    test_exe.root_module.addImport("log_options", test_log_options.createModule());
 
     // Create test_utils module with h3 dependency
     const test_utils_mod = b.addModule("test_utils", .{

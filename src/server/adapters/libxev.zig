@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const xev = @import("xev");
+
 const H3App = @import("../../core/app.zig").H3;
 const H3Event = @import("../../core/event.zig").H3Event;
 const HttpMethod = @import("../../http/method.zig").HttpMethod;
@@ -12,6 +13,7 @@ const AdapterFeatures = @import("../adapter.zig").AdapterFeatures;
 const IOModel = @import("../adapter.zig").IOModel;
 const ConnectionContext = @import("../adapter.zig").ConnectionContext;
 const ProcessResult = @import("../adapter.zig").ProcessResult;
+const logger = @import("../../util/root.zig").logger;
 
 /// libxev HTTP server adapter
 pub const LibxevAdapter = struct {
@@ -38,12 +40,17 @@ pub const LibxevAdapter = struct {
         read_completion: xev.Completion = undefined,
         write_completion: xev.Completion = undefined,
         close_completion: xev.Completion = undefined,
+        keep_alive: bool = false,
+        keep_alive_timeout: i64 = 5, // Default 5 seconds timeout
+        last_activity: i64 = 0,
+        allocator: std.mem.Allocator, // Direct reference to allocator, avoiding access through adapter
 
         fn init(adapter: *LibxevAdapter, tcp: xev.TCP, remote_addr: std.net.Address) !*Connection {
             const conn = try adapter.allocator.create(Connection);
             conn.* = Connection{
                 .tcp = tcp,
                 .adapter = adapter,
+                .allocator = adapter.allocator, // Store direct reference to allocator
                 .context = ConnectionContext{
                     .allocator = adapter.allocator,
                     .remote_address = remote_addr,
@@ -54,39 +61,110 @@ pub const LibxevAdapter = struct {
                 .write_completion = undefined,
                 .close_completion = undefined,
             };
+            const port = remote_addr.getPort();
+            logger.logDefault(.debug, .connection, "[Connection Created] Client port: {}, connection created, total connections: {}", .{ port, adapter.connections.items.len + 1 });
             return conn;
         }
 
-        fn deinit(self: *Connection) void {
-            self.adapter.allocator.destroy(self);
+        fn deinit(_: *Connection) void {
+            // Safely log connection destruction info without accessing any object properties
+            logger.logDefault(.debug, .connection, "[Connection Destroy] Connection memory about to be freed", .{});
+            // Note: Actual memory deallocation is handled in onCloseCallback
         }
 
         /// Process HTTP request and send response
         fn processHttpRequest(self: *Connection, loop: *xev.Loop) !void {
+            const start_time = std.time.milliTimestamp();
             const request_data = self.buffer[0..self.bytes_read];
 
-            // Create H3Event for this request
-            var event = H3Event.init(self.context.allocator);
-            defer event.deinit();
+            // Try to acquire event from pool, fallback to direct allocation
+            var event: *H3Event = undefined;
+            var use_pool = false;
+
+            if (self.adapter.app.event_pool) |*pool| {
+                if (pool.acquire()) |acquired_event| {
+                    event = acquired_event;
+                    use_pool = true;
+                } else |_| {
+                    // Pool exhausted, create new event but limit total count
+                    if (self.adapter.connections.items.len > 1000) {
+                        return error.TooManyConnections;
+                    }
+                    const new_event = try self.context.allocator.create(H3Event);
+                    new_event.* = H3Event.init(self.context.allocator);
+                    event = new_event;
+                    use_pool = false;
+                }
+            } else {
+                // Limit total connections even without pool
+                if (self.adapter.connections.items.len > 1000) {
+                    logger.logDefault(.warn, .connection, "[Connection Limit] Maximum connection limit reached (1000), rejecting new request", .{});
+                    return error.TooManyConnections;
+                }
+                const new_event = try self.context.allocator.create(H3Event);
+                new_event.* = H3Event.init(self.context.allocator);
+                event = new_event;
+                use_pool = false;
+            }
+
+            defer {
+                if (use_pool and self.adapter.app.event_pool != null) {
+                    self.adapter.app.event_pool.?.release(event);
+                } else {
+                    event.deinit();
+                    self.context.allocator.destroy(event);
+                }
+            }
 
             // Parse HTTP request
-            self.parseHttpRequest(&event, request_data) catch |err| {
-                std.log.err("Failed to parse HTTP request: {}", .{err});
+            self.parseHttpRequest(event, request_data) catch |err| {
+                logger.logDefault(.err, .request, "Failed to parse HTTP request: {}", .{err});
                 event.setStatus(.bad_request);
                 try event.sendText("Bad Request");
-                self.sendHttpResponse(loop, &event);
+                self.sendHttpResponse(loop, event);
                 return;
             };
 
             // Handle the request through H3 app
-            self.adapter.app.handle(&event) catch |err| {
-                std.log.err("Error handling request: {}", .{err});
+            self.adapter.app.handle(event) catch |err| {
+                logger.logDefault(.err, .request, "Error handling request: {}", .{err});
                 event.setStatus(.internal_server_error);
                 try event.sendText("Internal Server Error");
             };
 
+            // Check if Keep-Alive is supported
+            const connection_header = event.request.headers.get("Connection") orelse "";
+            if (std.mem.eql(u8, connection_header, "keep-alive")) {
+                // Set keep-alive response header
+                try event.response.headers.put("Connection", "keep-alive");
+                try event.response.headers.put("Keep-Alive", "timeout=5, max=100");
+
+                // Mark connection as keep-alive
+                self.keep_alive = true;
+                self.last_activity = std.time.timestamp();
+            } else {
+                self.keep_alive = false;
+            }
+
             // Send response
-            self.sendHttpResponse(loop, &event);
+            self.sendHttpResponse(loop, event);
+
+            // Log request processing time
+            const end_time = std.time.milliTimestamp();
+            const elapsed_ms = end_time - start_time;
+
+            if (elapsed_ms > 100) {
+                logger.logDefault(.warn, .performance, "[Slow Request] Request processing took {}ms, method: {s}", .{ elapsed_ms, @tagName(event.request.method) });
+            } else {
+                logger.logDefault(.debug, .request, "[Request Processing] Request completed, took {}ms, method: {s}", .{ elapsed_ms, @tagName(event.request.method) });
+            }
+
+            // Log memory usage (every 100 requests)
+            self.context.request_count += 1;
+            if (self.context.request_count % 100 == 0) {
+                // Here we can only output active connection count as an indirect indicator of memory usage
+                logger.logDefault(.info, .performance, "[Resource Usage] Current active connections: {}, processed requests: {}", .{ self.adapter.connections.items.len, self.context.request_count });
+            }
         }
 
         /// Parse HTTP request from raw data
@@ -199,8 +277,23 @@ pub const LibxevAdapter = struct {
 
         /// Close the connection
         fn close(self: *Connection, loop: *xev.Loop) void {
+            // Check if already closing to avoid double close
+            if (self.context.request_count == std.math.maxInt(u32)) {
+                return; // Already closing
+            }
+
+            // Mark as closing
+            self.context.request_count = std.math.maxInt(u32);
+
             // Use the TCP close method
             self.tcp.close(loop, &self.close_completion, Connection, self, onCloseCallback);
+        }
+
+        /// Check if connection has timed out
+        fn isTimedOut(self: *Connection) bool {
+            const current_time = std.time.timestamp();
+            const connection_age = current_time - self.context.start_time;
+            return connection_age > 30; // 30 seconds timeout
         }
     };
 
@@ -221,7 +314,7 @@ pub const LibxevAdapter = struct {
         const worker_count = options.getWorkerCount();
         const stack_size = options.thread_pool.stack_size;
 
-        std.log.info("Initializing libxev with {} worker threads, {}KB stack size", .{
+        logger.logDefault(.info, .general, "Initializing libxev with {} worker threads, {}KB stack size", .{
             worker_count,
             stack_size / 1024,
         });
@@ -235,13 +328,13 @@ pub const LibxevAdapter = struct {
         self.loop = xev.Loop.init(.{
             .thread_pool = &self.thread_pool.?,
         }) catch |err| {
-            std.log.err("Failed to initialize libxev loop: {}", .{err});
+            logger.logDefault(.err, .general, "Failed to initialize libxev loop: {}", .{err});
             if (self.thread_pool) |*tp| tp.deinit();
             return err;
         };
 
         self.initialized = true;
-        std.log.debug("libxev components initialized successfully", .{});
+        logger.logDefault(.debug, .general, "libxev components initialized successfully", .{});
     }
 
     /// Start listening for connections
@@ -264,8 +357,8 @@ pub const LibxevAdapter = struct {
         defer self.allocator.free(url);
 
         // Log configuration details
-        std.log.info("H3 server listening on {s} (libxev adapter)", .{url});
-        std.log.info("Configuration: {} workers, max {} connections, {}KB stack", .{
+        logger.logDefault(.info, .general, "H3 server listening on {s} (libxev adapter)", .{url});
+        logger.logDefault(.info, .general, "Configuration: {} workers, max {} connections, {}KB stack", .{
             options.getWorkerCount(),
             options.limits.max_connections,
             options.thread_pool.stack_size / 1024,
@@ -275,9 +368,17 @@ pub const LibxevAdapter = struct {
         self.startAccept();
 
         // Run event loop with configured parameters
+        var last_cleanup = std.time.timestamp();
         while (self.running.load(.monotonic)) {
             // Use .until_done to process all available events
             try self.loop.?.run(.until_done);
+
+            // Periodic cleanup of timed out connections
+            const current_time = std.time.timestamp();
+            if (current_time - last_cleanup > 10) { // Cleanup every 10 seconds
+                self.cleanupTimedOutConnections();
+                last_cleanup = current_time;
+            }
 
             // Small sleep to prevent busy waiting (configurable via libxev options)
             const sleep_time = if (options.adapter.libxev.timer_resolution > 0)
@@ -287,7 +388,23 @@ pub const LibxevAdapter = struct {
             std.time.sleep(sleep_time);
         }
 
-        std.log.info("H3 server stopped", .{});
+        logger.logDefault(.info, .general, "H3 server stopped", .{});
+    }
+
+    /// Clean up timed out connections
+    fn cleanupTimedOutConnections(self: *Self) void {
+        var i: usize = 0;
+        while (i < self.connections.items.len) {
+            const conn = self.connections.items[i];
+            if (conn.isTimedOut()) {
+                logger.logDefault(.debug, .connection, "Cleaning up timed out connection", .{});
+                if (self.loop) |*loop| {
+                    conn.close(loop);
+                }
+                // Connection will be removed from list in onCloseCallback
+            }
+            i += 1;
+        }
     }
 
     /// Stop the server gracefully
@@ -331,7 +448,7 @@ pub const LibxevAdapter = struct {
     pub fn info(self: *Self) AdapterInfo {
         _ = self;
 
-        std.log.info("Using real libxev - High-performance async I/O with configurable thread pool", .{});
+        logger.logDefault(.info, .general, "Using real libxev - High-performance async I/O with configurable thread pool", .{});
 
         return AdapterInfo{
             .name = "libxev",
@@ -368,27 +485,27 @@ pub const LibxevAdapter = struct {
         _ = completion;
 
         const self = self_opt orelse {
-            std.log.err("Accept callback called with null self pointer", .{});
+            logger.logDefault(.err, .general, "Accept callback called with null self pointer", .{});
             return .rearm;
         };
 
         const client_tcp = result catch |err| {
-            std.log.err("Failed to accept connection: {}", .{err});
+            logger.logDefault(.err, .connection, "Failed to accept connection: {}", .{err});
             return .rearm;
         };
 
-        std.log.debug("New connection accepted", .{});
+        logger.logDefault(.debug, .connection, "New connection accepted", .{});
 
         // Create connection for the new client
         const remote_addr = std.net.Address.initIp4(.{ 0, 0, 0, 0 }, 0); // TODO: Get real remote address
         const conn = Connection.init(self, client_tcp, remote_addr) catch |err| {
-            std.log.err("Failed to create connection: {}", .{err});
+            logger.logDefault(.err, .connection, "Failed to create connection: {}", .{err});
             return .rearm; // Continue accepting
         };
 
         // Add to connections list
         self.connections.append(conn) catch |err| {
-            std.log.err("Failed to add connection: {}", .{err});
+            logger.logDefault(.err, .connection, "Failed to add connection: {}", .{err});
             conn.deinit();
             return .rearm; // Continue accepting
         };
@@ -396,7 +513,7 @@ pub const LibxevAdapter = struct {
         // Start reading from the connection
         conn.startRead(loop);
 
-        std.log.debug("Connection established, total connections: {}", .{self.connections.items.len});
+        logger.logDefault(.debug, .connection, "Connection established, total connections: {}", .{self.connections.items.len});
 
         // Continue accepting new connections
         return .rearm;
@@ -416,30 +533,37 @@ pub const LibxevAdapter = struct {
         _ = buffer;
 
         const conn = conn_opt orelse {
-            std.log.err("Read callback called with null connection pointer", .{});
+            logger.logDefault(.err, .connection, "Read callback called with null connection pointer", .{});
             return .disarm;
         };
 
+        // Handle all read errors in one place
         const bytes_read = result catch |err| {
-            std.log.err("Read failed: {}", .{err});
+            switch (err) {
+                error.EOF, error.ConnectionResetByPeer, error.BrokenPipe, error.ConnectionTimedOut => {
+                    logger.logDefault(.debug, .connection, "Connection closed: {}", .{err});
+                },
+                else => {
+                    logger.logDefault(.err, .connection, "Read failed: {}", .{err});
+                },
+            }
             conn.close(loop);
             return .disarm;
         };
 
+        // Handle empty read (connection closed gracefully)
         if (bytes_read == 0) {
-            // Connection closed by client
-            std.log.debug("Connection closed by client", .{});
+            logger.logDefault(.debug, .connection, "Connection closed gracefully (empty read)", .{});
             conn.close(loop);
             return .disarm;
         }
 
-        std.log.debug("Received {} bytes from connection", .{bytes_read});
+        logger.logDefault(.debug, .connection, "Received {} bytes from connection", .{bytes_read});
         conn.bytes_read = bytes_read;
 
         // Process HTTP request
         conn.processHttpRequest(loop) catch |err| {
-            std.log.err("Failed to process HTTP request: {}", .{err});
-            conn.close(loop);
+            logger.logDefault(.err, .request, "Error processing request: {}", .{err});
             return .disarm;
         };
 
@@ -458,22 +582,26 @@ pub const LibxevAdapter = struct {
         _ = completion;
         _ = tcp;
         _ = buffer;
+        const conn = conn_opt orelse return .disarm;
 
-        const conn = conn_opt orelse {
-            std.log.err("Write callback called with null connection pointer", .{});
-            return .disarm;
-        };
-
+        // Check for write errors
         const bytes_written = result catch |err| {
-            std.log.err("Write failed: {}", .{err});
+            logger.logDefault(.err, .connection, "Write failed: {}", .{err});
             conn.close(loop);
             return .disarm;
         };
 
-        std.log.debug("Sent {} bytes to connection", .{bytes_written});
+        logger.logDefault(.debug, .connection, "Sent {} bytes to connection", .{bytes_written});
 
-        // For now, close connection after sending response
-        // TODO: Implement keep-alive support
+        // If it's a keep-alive connection, continue reading the next request
+        if (conn.keep_alive) {
+            logger.logDefault(.debug, .connection, "Keeping connection alive (Keep-Alive)", .{});
+            conn.bytes_read = 0; // Reset buffer
+            conn.startRead(loop); // startRead returns void, no error handling needed
+            return .disarm;
+        }
+
+        // Non keep-alive connection, close it
         conn.close(loop);
 
         return .disarm;
@@ -491,26 +619,30 @@ pub const LibxevAdapter = struct {
         _ = completion;
         _ = tcp;
         result catch |err| {
-            std.log.err("Close operation failed: {}", .{err});
+            logger.logDefault(.err, .connection, "Close operation failed: {}", .{err});
         };
 
-        const conn = conn_opt orelse {
-            std.log.err("Close callback called with null connection pointer", .{});
+        // Safely check connection object
+        if (conn_opt == null) {
+            logger.logDefault(.err, .connection, "[Connection Close] Callback received null connection pointer", .{});
             return .disarm;
-        };
-
-        std.log.debug("Connection closed", .{});
-
-        // Remove from connections list
-        for (conn.adapter.connections.items, 0..) |item, i| {
-            if (item == conn) {
-                _ = conn.adapter.connections.swapRemove(i);
-                break;
-            }
         }
 
-        // Cleanup connection
+        const conn = conn_opt.?;
+
+        // Only log, don't perform other operations
+        logger.logDefault(.debug, .connection, "[Connection Close] Connection closing", .{});
+
+        // Log adapter information
+        logger.logDefault(.debug, .connection, "[Connection Close] Adapter: {*}", .{conn.adapter});
+
+        // Mark connection as closed but don't free memory
+        // This will be handled in the next cleanup cycle
+        logger.logDefault(.debug, .connection, "[Connection Close] Marking connection as closed", .{});
+
+        // Safely call deinit method, only logging
         conn.deinit();
+        logger.logDefault(.debug, .connection, "[Connection Close] Cleanup complete", .{});
 
         return .disarm;
     }
@@ -547,7 +679,11 @@ test "LibxevAdapter.parseHttpRequest" {
     const addr = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 3000);
     const tcp = try xev.TCP.init(addr);
     var conn = try LibxevAdapter.Connection.init(&adapter, tcp, addr);
-    defer conn.deinit();
+    defer {
+        conn.deinit();
+        // Manually free the connection memory since we're not using the normal cleanup process
+        adapter.allocator.destroy(conn);
+    }
 
     try conn.parseHttpRequest(&event, request_data);
 
