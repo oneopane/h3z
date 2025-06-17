@@ -26,6 +26,7 @@ pub const LibxevAdapter = struct {
     connections: std.ArrayList(*Connection),
     accept_completion: xev.Completion = undefined,
     initialized: bool = false,
+    next_conn_id: usize = 0,
 
     const Self = @This();
 
@@ -44,6 +45,9 @@ pub const LibxevAdapter = struct {
         keep_alive_timeout: i64 = 5, // Default 5 seconds timeout
         last_activity: i64 = 0,
         allocator: std.mem.Allocator, // Direct reference to allocator, avoiding access through adapter
+        id: usize = 0,
+        read_active: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        write_active: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
         fn init(adapter: *LibxevAdapter, tcp: xev.TCP, remote_addr: std.net.Address) !*Connection {
             const conn = try adapter.allocator.create(Connection);
@@ -61,6 +65,8 @@ pub const LibxevAdapter = struct {
                 .write_completion = undefined,
                 .close_completion = undefined,
             };
+            conn.id = adapter.next_conn_id;
+            adapter.next_conn_id += 1;
             const port = remote_addr.getPort();
             logger.logDefault(.debug, .connection, "[Connection Created] Client port: {}, connection created, total connections: {}", .{ port, adapter.connections.items.len + 1 });
             return conn;
@@ -252,6 +258,8 @@ pub const LibxevAdapter = struct {
         /// Start reading from this connection
         fn startRead(self: *Connection, loop: *xev.Loop) void {
             // Use the TCP read method instead of manual completion
+            self.read_active.store(true, .seq_cst);
+            logger.logDefault(.debug, .general, "[SUBMIT READ] conn_id={}, compl_ptr={}", .{ self.id, &self.read_completion });
             self.tcp.read(loop, &self.read_completion, .{ .slice = &self.buffer }, Connection, self, onReadCallback);
         }
 
@@ -262,6 +270,8 @@ pub const LibxevAdapter = struct {
             @memcpy(self.response_buffer[0..len], response_data[0..len]);
 
             // Use the TCP write method
+            self.write_active.store(true, .seq_cst);
+            logger.logDefault(.debug, .general, "[SUBMIT WRITE] conn_id={}, compl_ptr={}", .{ self.id, &self.write_completion });
             self.tcp.write(loop, &self.write_completion, .{ .slice = self.response_buffer[0..len] }, Connection, self, onWriteCallback);
         }
 
@@ -277,17 +287,23 @@ pub const LibxevAdapter = struct {
             // Remove from connection list before closing to avoid race conditions during callback
             logger.logDefault(.debug, .connection, "[Connection] Removing from connection list", .{});
 
-            var found = false;
-            for (self.adapter.connections.items, 0..) |conn, i| {
-                if (conn == self) {
-                    _ = self.adapter.connections.swapRemove(i);
-                    found = true;
-                    break;
+            // Use a separate scope to ensure thread safety during list modification
+            {
+                var found = false;
+                var i: usize = 0;
+                while (i < self.adapter.connections.items.len) : (i += 1) {
+                    if (self.adapter.connections.items[i] == self) {
+                        _ = self.adapter.connections.swapRemove(i);
+                        found = true;
+                        break;
+                    }
                 }
-            }
 
-            if (!found) {
-                logger.logDefault(.warn, .connection, "[Connection] Connection not found in list during close", .{});
+                if (!found) {
+                    logger.logDefault(.warn, .connection, "[Connection] Connection not found in list during close", .{});
+                } else {
+                    logger.logDefault(.debug, .connection, "[Connection] Successfully removed from connection list, remaining: {}", .{self.adapter.connections.items.len});
+                }
             }
 
             // Safely close the TCP connection
@@ -502,6 +518,38 @@ pub const LibxevAdapter = struct {
             return .rearm;
         };
 
+        // Enforce maximum concurrent connection limit
+        if (self.connections.items.len >= 1000) {
+            logger.logDefault(.warn, .connection, "[Connection Limit] Maximum connection limit reached (1000), rejecting new connection", .{});
+
+            // Allocate a completion object for this close; handle OOM without propagating error
+            const comp_ptr = self.allocator.create(xev.Completion) catch {
+                logger.logDefault(.err, .connection, "[Reject Connection] Out of memory allocating completion", .{});
+                var tmp_comp: xev.Completion = undefined;
+                client_tcp.close(loop, &tmp_comp, void, null, struct {
+                    fn callback(_: ?*void, _: *xev.Loop, _: *xev.Completion, _: xev.TCP, _: xev.CloseError!void) xev.CallbackAction {
+                        return .disarm;
+                    }
+                }.callback);
+                return .rearm;
+            };
+
+            const reject_cb = struct {
+                fn callback(alloc_ptr_opt: ?*std.mem.Allocator, _: *xev.Loop, comp: *xev.Completion, _: xev.TCP, close_res: xev.CloseError!void) xev.CallbackAction {
+                    close_res catch |err| {
+                        logger.logDefault(.err, .connection, "[Reject Connection] Close error: {}", .{err});
+                    };
+                    const alloc_ptr = alloc_ptr_opt orelse return .disarm;
+                    alloc_ptr.destroy(comp);
+                    logger.logDefault(.debug, .connection, "[Reject Connection] Successfully closed rejected connection", .{});
+                    return .disarm;
+                }
+            }.callback;
+
+            client_tcp.close(loop, comp_ptr, std.mem.Allocator, &self.allocator, reject_cb);
+            return .rearm;
+        }
+
         logger.logDefault(.debug, .connection, "New connection accepted", .{});
 
         // Create connection for the new client
@@ -536,7 +584,6 @@ pub const LibxevAdapter = struct {
         buffer: xev.ReadBuffer,
         result: xev.ReadError!usize,
     ) xev.CallbackAction {
-        _ = completion;
         _ = tcp;
         _ = buffer;
 
@@ -544,8 +591,8 @@ pub const LibxevAdapter = struct {
             logger.logDefault(.err, .connection, "Read callback called with null connection pointer", .{});
             return .disarm;
         };
-
-        // Handle all read errors in one place
+        conn.read_active.store(false, .seq_cst);
+        logger.logDefault(.debug, .general, "[CB READ] conn_id={}, compl_ptr={}", .{ conn.id, completion });
         const bytes_read = result catch |err| {
             switch (err) {
                 error.EOF, error.ConnectionResetByPeer, error.BrokenPipe, error.ConnectionTimedOut => {
@@ -587,10 +634,11 @@ pub const LibxevAdapter = struct {
         buffer: xev.WriteBuffer,
         result: xev.WriteError!usize,
     ) xev.CallbackAction {
-        _ = completion;
         _ = tcp;
         _ = buffer;
         const conn = conn_opt orelse return .disarm;
+        conn.write_active.store(false, .seq_cst);
+        logger.logDefault(.debug, .general, "[CB WRITE] conn_id={}, compl_ptr={}", .{ conn.id, completion });
 
         // Check for write errors
         const bytes_written = result catch |err| {
@@ -624,8 +672,8 @@ pub const LibxevAdapter = struct {
         result: xev.CloseError!void,
     ) xev.CallbackAction {
         _ = loop;
-        _ = completion;
         _ = tcp;
+        _ = completion;
 
         // Safely handle close errors
         result catch |err| {
