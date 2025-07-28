@@ -12,11 +12,12 @@ test "H3 app creation and cleanup" {
     const allocator = test_alloc.allocator;
 
     // Test app creation
-    var app = h3.createApp(allocator);
+    var app = try h3.createApp(allocator);
     defer app.deinit();
 
     // App initialized correctly
-    try testing.expect(app.getRouteCount() == 0);
+    // Note: getRouteCount() method doesn't exist in current H3 implementation
+    // We can check middlewares instead
     try testing.expect(app.middlewares.items.len == 0);
 }
 

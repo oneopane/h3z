@@ -24,7 +24,7 @@ test "H3 app creation and cleanup" {
     const allocator = test_alloc.allocator;
 
     // Test app creation
-    var app = h3.createApp(allocator);
+    var app = try h3.createApp(allocator);
     defer app.deinit();
 
     // App initialized correctly
@@ -177,7 +177,7 @@ test "Basic route registration" {
     defer test_alloc.deinit();
     const allocator = test_alloc.allocator;
 
-    var app = h3.createApp(allocator);
+    var app = try h3.createApp(allocator);
     defer app.deinit();
 
     // Test handler

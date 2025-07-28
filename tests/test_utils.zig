@@ -132,7 +132,18 @@ pub const MockRequest = struct {
 
     /// Set request body
     pub fn body(self: *MockRequest, request_body: []const u8) *MockRequest {
-        self.event.request.body = request_body;
+        // Need to allocate and copy since request.body expects mutable slice
+        const body_copy = self.allocator.dupe(u8, request_body) catch |err| {
+            std.log.err("Failed to allocate body: {}", .{err});
+            return self;
+        };
+        
+        // Free old body if it exists
+        if (self.event.request.body) |old_body| {
+            self.allocator.free(old_body);
+        }
+        
+        self.event.request.body = body_copy;
         return self;
     }
 
