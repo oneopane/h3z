@@ -2,6 +2,22 @@
 //! Implements W3C SSE specification for server-to-client streaming
 
 const std = @import("std");
+const SSEConnection = @import("../server/sse_connection.zig").SSEConnection;
+const SSEConnectionError = @import("../server/sse_connection.zig").SSEConnectionError;
+
+/// SSE error set for streaming operations
+pub const SSEError = error{
+    ResponseAlreadySent,
+    SSEAlreadyStarted,
+    SSENotStarted,
+    ConnectionNotReady,
+    WriterClosed,
+    ConnectionLost,
+    BackpressureDetected,
+    WriteError,
+    AllocationError,
+    NotImplemented,
+};
 
 /// SSE event structure following W3C specification
 /// Each event can have optional fields: data, event, id, retry
@@ -124,6 +140,89 @@ pub const SSEEventBuilder = struct {
 pub fn keepAliveEvent() SSEEvent {
     return .{ .data = ": keep-alive" };
 }
+
+/// SSE writer for managing server-sent event streams
+pub const SSEWriter = struct {
+    allocator: std.mem.Allocator,
+    connection: *SSEConnection,
+    closed: bool = false,
+    event_count: usize = 0,
+    
+    /// Initialize a new SSE writer
+    pub fn init(allocator: std.mem.Allocator, connection: *SSEConnection) SSEWriter {
+        return .{
+            .allocator = allocator,
+            .connection = connection,
+            .closed = false,
+            .event_count = 0,
+        };
+    }
+    
+    /// Send an SSE event to the client
+    pub fn sendEvent(self: *SSEWriter, event: SSEEvent) SSEError!void {
+        if (self.closed) return error.WriterClosed;
+        
+        // Format event
+        const formatted = try event.formatEvent(self.allocator);
+        defer self.allocator.free(formatted);
+        
+        // Write to connection
+        self.connection.writeChunk(formatted) catch |err| {
+            return switch (err) {
+                error.ConnectionClosed => error.ConnectionLost,
+                error.BufferFull => error.BackpressureDetected,
+                else => error.WriteError,
+            };
+        };
+        
+        // Flush for real-time delivery
+        self.connection.flush() catch |err| {
+            return switch (err) {
+                error.ConnectionClosed => error.ConnectionLost,
+                else => error.WriteError,
+            };
+        };
+        
+        self.event_count += 1;
+    }
+    
+    /// Send a keep-alive comment to maintain the connection
+    pub fn sendKeepAlive(self: *SSEWriter) SSEError!void {
+        if (self.closed) return error.WriterClosed;
+        
+        const keepalive = ":heartbeat\n\n";
+        
+        self.connection.writeChunk(keepalive) catch |err| {
+            return switch (err) {
+                error.ConnectionClosed => error.ConnectionLost,
+                error.BufferFull => error.BackpressureDetected,
+                else => error.WriteError,
+            };
+        };
+        
+        self.connection.flush() catch {
+            return error.WriteError;
+        };
+    }
+    
+    /// Close the SSE writer and underlying connection
+    pub fn close(self: *SSEWriter) void {
+        if (!self.closed) {
+            self.connection.close();
+            self.closed = true;
+        }
+    }
+    
+    /// Check if the writer is still active
+    pub fn isActive(self: *const SSEWriter) bool {
+        return !self.closed and self.connection.isAlive();
+    }
+    
+    /// Get the number of events sent
+    pub fn getEventCount(self: *const SSEWriter) usize {
+        return self.event_count;
+    }
+};
 
 test "SSEEvent simple data formatting" {
     const allocator = std.testing.allocator;

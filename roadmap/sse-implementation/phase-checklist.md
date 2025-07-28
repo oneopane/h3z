@@ -23,37 +23,37 @@
 
 ---
 
-## Phase 2: Connection Abstraction Layer ✅
+## Phase 2: SSE Connection Abstraction Layer ✅
 
 ### Implementation Tasks
-- [x] Create `src/server/connection.zig`
-  - [x] Define `Connection` interface as tagged union:
+- [x] Create `src/server/sse_connection.zig`
+  - [x] Define `SSEConnection` interface as tagged union:
     ```zig
-    pub const Connection = union(enum) {
+    pub const SSEConnection = union(enum) {
         libxev: *LibxevConnection,
         std: *StdConnection,
     };
     ```
   - [x] Add `writeChunk` method:
     ```zig
-    pub fn writeChunk(self: Connection, data: []const u8) ConnectionError!void
+    pub fn writeChunk(self: SSEConnection, data: []const u8) SSEConnectionError!void
     ```
   - [x] Add `flush` method for immediate transmission:
     ```zig
-    pub fn flush(self: Connection) ConnectionError!void
+    pub fn flush(self: SSEConnection) SSEConnectionError!void
     ```
   - [x] Add `close` method:
     ```zig
-    pub fn close(self: Connection) void
+    pub fn close(self: SSEConnection) void
     ```
   - [x] Add `isAlive` method for connection status:
     ```zig
-    pub fn isAlive(self: Connection) bool
+    pub fn isAlive(self: SSEConnection) bool
     ```
 
 ### Error Set Definition
 ```zig
-pub const ConnectionError = error{
+pub const SSEConnectionError = error{
     ConnectionClosed,
     WriteError,
     BufferFull,
@@ -126,9 +126,9 @@ pub const ConnectionError = error{
   - [x] Simple backpressure: block on full buffer
 
 ### Connection Factory Methods
-- [x] LibxevAdapter adds `createConnection() !*Connection`
-- [x] StdAdapter adds `createConnection() !*Connection`
-- [x] Both return Connection union with proper variant
+- [x] LibxevAdapter adds `createConnection() !*SSEConnection`
+- [x] StdAdapter adds `createConnection() !*SSEConnection`
+- [x] Both return SSEConnection union with proper variant
 
 ### Memory Management
 - [x] Write queues use connection's allocator
@@ -146,16 +146,19 @@ pub const ConnectionError = error{
 
 ---
 
-## Phase 4: H3Event SSE Integration ⏳
+## Phase 4: H3Event SSE Integration ✅
+
+**Note**: Phase 4 provides the complete API but requires adapter updates to fully function. See [adapter-integration-guide.md](./adapter-integration-guide.md) for implementation details.
 
 ### H3Event Modifications
-- [ ] Modify `src/core/event.zig`
-  - [ ] Add SSE state tracking:
+- [x] Modify `src/core/event.zig`
+  - [x] Add SSE state tracking:
     ```zig
     sse_started: bool = false,
     response_sent: bool = false,
+    sse_connection: ?*const SSEConnection = null,
     ```
-  - [ ] Add `startSSE()` method:
+  - [x] Add `startSSE()` method:
     ```zig
     pub fn startSSE(self: *H3Event) SSEError!*SSEWriter {
         if (self.response_sent) return error.ResponseAlreadySent;
@@ -171,16 +174,17 @@ pub const ConnectionError = error{
         try self.sendHeaders();
         self.sse_started = true;
         
-        return SSEWriter.init(self.allocator, self.connection);
+        // Adapter will set self.sse_connection after detecting SSE mode
+        // Use getSSEWriter() to retrieve the writer after connection is ready
     }
     ```
 
 ### SSEWriter Implementation
-- [ ] Add to `src/http/sse.zig`:
+- [x] Add to `src/http/sse.zig`:
   ```zig
   pub const SSEWriter = struct {
       allocator: std.mem.Allocator,
-      connection: *Connection,
+      connection: *SSEConnection,
       closed: bool = false,
       event_count: usize = 0,
       
@@ -224,26 +228,137 @@ pub const SSEError = error{
     BackpressureDetected,
     WriteError,
     AllocationError,
+    NotImplemented,  // Temporary until server adapter integration
 };
 ```
 
 ### Integration Requirements
-- [ ] Prevent `sendResponse()` after `startSSE()`
-- [ ] Middleware can detect SSE mode via `event.sse_started`
-- [ ] Connection automatically enters streaming mode
-- [ ] Proper cleanup on early client disconnect
+- [x] Prevent `sendResponse()` after `startSSE()`
+- [x] Middleware can detect SSE mode via `event.sse_started`
+- [ ] Connection automatically enters streaming mode (requires server adapter integration)
+- [ ] Proper cleanup on early client disconnect (requires server adapter integration)
 
 ### Verification
-- [ ] Cannot send regular response after SSE start
-- [ ] Headers sent immediately on startSSE()
-- [ ] Events transmitted with low latency
-- [ ] Connection stays open between events
-- [ ] Memory usage stable over time
-- [ ] Graceful handling of client disconnect
+- [x] Cannot send regular response after SSE start
+- [ ] Headers sent immediately on startSSE() (requires server adapter integration)
+- [ ] Events transmitted with low latency (requires server adapter integration)
+- [ ] Connection stays open between events (requires server adapter integration)
+- [ ] Memory usage stable over time (requires server adapter integration)
+- [ ] Graceful handling of client disconnect (requires server adapter integration)
 
 ---
 
-## Phase 5: Testing and Examples ⏳
+## Phase 5: Adapter-Event Integration ⏳
+
+### Purpose
+Connect the SSE infrastructure from Phase 3 (adapters) with the API from Phase 4 (H3Event) to enable full end-to-end SSE streaming.
+
+### LibXev Adapter Updates
+- [ ] Modify `src/server/adapters/libxev.zig`
+  - [ ] After `app.handle(&event)`, check for SSE mode:
+    ```zig
+    if (event.sse_started) {
+        // Create SSE connection
+        const sse_conn = try self.createStreamingConnection(loop);
+        sse_conn.enableStreamingMode();
+        
+        // Convert to SSEConnection and link to event
+        event.sse_connection = &sse_conn.toSSEConnection();
+        
+        // Send headers immediately
+        try self.sendSSEHeaders(&event);
+        
+        // Store for cleanup
+        self.streaming_connection = sse_conn;
+        
+        // Skip normal response flow
+        return;
+    }
+    ```
+  - [ ] Add `sendSSEHeaders` method to send headers without body
+  - [ ] Add `toSSEConnection()` method to LibxevConnection:
+    ```zig
+    pub fn toSSEConnection(self: *LibxevConnection) SSEConnection {
+        return SSEConnection{ .libxev = self };
+    }
+    ```
+
+### Std Adapter Updates
+- [ ] Modify `src/server/adapters/std.zig`
+  - [ ] After `app.handle(&event)`, check for SSE mode:
+    ```zig
+    if (event.sse_started) {
+        // Create SSE connection
+        const sse_conn = try StdConnection.init(self.allocator, stream);
+        sse_conn.enableStreamingMode();
+        
+        // Convert to SSEConnection and link to event
+        event.sse_connection = &sse_conn.toSSEConnection();
+        
+        // Send headers immediately
+        try self.sendSSEHeaders(&event, stream);
+        
+        // Return with keep-alive
+        return ProcessResult{ .keep_alive = true, .close_connection = false };
+    }
+    ```
+  - [ ] Add `sendSSEHeaders` method
+  - [ ] Add `toSSEConnection()` method to StdConnection:
+    ```zig
+    pub fn toSSEConnection(self: *StdConnection) SSEConnection {
+        return SSEConnection{ .std = self };
+    }
+    ```
+
+### Shared Implementation
+- [ ] Create helper to format and send SSE headers:
+  ```zig
+  fn sendSSEHeaders(self: *Self, event: *H3Event, stream: anytype) !void {
+      var buffer: [1024]u8 = undefined;
+      var fbs = std.io.fixedBufferStream(&buffer);
+      const writer = fbs.writer();
+      
+      // Status line
+      try writer.print("HTTP/{s} 200 OK\r\n", .{event.response.version});
+      
+      // Headers
+      var header_iter = event.response.headers.iterator();
+      while (header_iter.next()) |entry| {
+          try writer.print("{s}: {s}\r\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+      }
+      
+      // Empty line to end headers
+      try writer.writeAll("\r\n");
+      
+      // Send immediately
+      const response_data = fbs.getWritten();
+      try stream.writeAll(response_data);
+  }
+  ```
+
+### Connection Lifecycle
+- [ ] Ensure SSE connections bypass normal close logic
+- [ ] Handle cleanup when SSE writer is closed
+- [ ] Implement timeout handling for idle SSE connections
+- [ ] Add connection tracking for monitoring
+
+### Integration Testing
+- [ ] Create test endpoint that uses `startSSE()`
+- [ ] Verify headers are sent immediately
+- [ ] Test `getSSEWriter()` returns valid writer
+- [ ] Verify events can be sent through the writer
+- [ ] Test connection stays alive between events
+- [ ] Verify graceful shutdown of SSE connections
+
+### Verification
+- [ ] Full SSE flow works end-to-end
+- [ ] No memory leaks in connection handoff
+- [ ] Proper error handling throughout
+- [ ] Performance meets requirements
+
+---
+
+## Phase 6: Testing and Examples ⏳
 
 ### Unit Tests
 - [ ] Create `tests/unit/sse_test.zig`
@@ -476,11 +591,12 @@ pub const SSEError = error{
 
 Use this section to track overall progress:
 
-- Phase 1: ✅ Complete
-- Phase 2: ✅ Complete  
-- Phase 3: ✅ Complete
-- Phase 4: ⏳ Not Started
-- Phase 5: ⏳ Not Started
+- Phase 1: ✅ Complete (Core SSE Types)
+- Phase 2: ✅ Complete (SSE Connection Abstraction)
+- Phase 3: ✅ Complete (Adapter SSE Support)
+- Phase 4: ✅ Complete (H3Event SSE API)
+- Phase 5: ⏳ Not Started (Adapter-Event Integration)
+- Phase 6: ⏳ Not Started (Testing & Examples)
 
 Legend:
 - ⏳ Not Started

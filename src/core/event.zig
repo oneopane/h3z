@@ -7,6 +7,9 @@ const HttpMethod = @import("../http/method.zig").HttpMethod;
 const HttpStatus = @import("../http/status.zig").HttpStatus;
 const url_utils = @import("../internal/url.zig");
 const body_utils = @import("../utils/body.zig");
+const sse = @import("../http/sse.zig");
+const SSEWriter = sse.SSEWriter;
+const SSEError = sse.SSEError;
 
 /// Context map for storing arbitrary data
 const Context = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage);
@@ -31,6 +34,15 @@ pub const H3Event = struct {
     /// Allocator for memory management
     allocator: std.mem.Allocator,
 
+    /// SSE state tracking
+    sse_started: bool = false,
+
+    /// Track if response has been sent
+    response_sent: bool = false,
+
+    /// SSE connection reference (optional)
+    sse_connection: ?*const @import("../server/sse_connection.zig").SSEConnection = null,
+
     /// Initialize a new H3Event
     pub fn init(allocator: std.mem.Allocator) H3Event {
         return H3Event{
@@ -40,6 +52,9 @@ pub const H3Event = struct {
             .params = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
             .query = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
             .allocator = allocator,
+            .sse_started = false,
+            .response_sent = false,
+            .sse_connection = null,
         };
     }
 
@@ -78,6 +93,9 @@ pub const H3Event = struct {
     pub fn reset(self: *H3Event) void {
         self.request.reset();
         self.response.reset();
+        self.sse_started = false;
+        self.response_sent = false;
+        self.sse_connection = null;
 
         // Safely free key-value pairs in the context hash map
         var context_keys = std.ArrayList([]const u8).init(self.allocator);
@@ -277,32 +295,44 @@ pub const H3Event = struct {
 
     /// Send a text response
     pub fn sendText(self: *H3Event, text: []const u8) !void {
+        if (self.sse_started) return SSEError.SSEAlreadyStarted;
         try self.response.setText(text);
+        self.response_sent = true;
     }
 
     /// Send an HTML response
     pub fn sendHtml(self: *H3Event, html: []const u8) !void {
+        if (self.sse_started) return SSEError.SSEAlreadyStarted;
         try self.response.setHtml(html);
+        self.response_sent = true;
     }
 
     /// Send a JSON response
     pub fn sendJson(self: *H3Event, json: []const u8) !void {
+        if (self.sse_started) return SSEError.SSEAlreadyStarted;
         try self.response.setJson(json);
+        self.response_sent = true;
     }
 
     /// Send a JSON response from a value
     pub fn sendJsonValue(self: *H3Event, value: anytype) !void {
+        if (self.sse_started) return SSEError.SSEAlreadyStarted;
         try self.response.setJsonValue(value);
+        self.response_sent = true;
     }
 
     /// Send a redirect response
     pub fn redirect(self: *H3Event, location: []const u8, status: HttpStatus) !void {
+        if (self.sse_started) return SSEError.SSEAlreadyStarted;
         try self.response.redirect(location, status);
+        self.response_sent = true;
     }
 
     /// Send an error response
     pub fn sendError(self: *H3Event, status: HttpStatus, message: []const u8) !void {
+        if (self.sse_started) return SSEError.SSEAlreadyStarted;
         try self.response.setError(status, message);
+        self.response_sent = true;
     }
 
     /// Read the request body
@@ -373,6 +403,49 @@ pub const H3Event = struct {
     /// Set no-cache headers
     pub fn setNoCache(self: *H3Event) !void {
         try self.response.setNoCache();
+    }
+
+    /// Start Server-Sent Events (SSE) streaming
+    /// This method prepares the response for SSE but doesn't return a writer immediately.
+    /// The server adapter will detect SSE mode and create the appropriate connection.
+    pub fn startSSE(self: *H3Event) SSEError!void {
+        if (self.response_sent) return error.ResponseAlreadySent;
+        if (self.sse_started) return error.SSEAlreadyStarted;
+        
+        // Set SSE headers
+        try self.response.setHeader("Content-Type", "text/event-stream");
+        try self.response.setHeader("Cache-Control", "no-cache");
+        try self.response.setHeader("Connection", "keep-alive");
+        try self.response.setHeader("X-Accel-Buffering", "no"); // Disable Nginx buffering
+        
+        // Mark SSE as started
+        self.sse_started = true;
+        
+        // The server adapter will:
+        // 1. Detect sse_started = true after app.handle()
+        // 2. Create an SSE connection
+        // 3. Send headers immediately
+        // 4. Set self.sse_connection for getSSEWriter() to use
+    }
+    
+    /// Get the SSE writer after startSSE has been called and the adapter has set up the connection
+    pub fn getSSEWriter(self: *H3Event) SSEError!*SSEWriter {
+        if (!self.sse_started) return error.SSENotStarted;
+        if (self.sse_connection == null) return error.ConnectionNotReady;
+        
+        // Create a new SSEWriter with the connection
+        const writer = try self.allocator.create(SSEWriter);
+        writer.* = SSEWriter.init(self.allocator, @constCast(self.sse_connection.?));
+        return writer;
+    }
+
+    /// Send the response (prevents SSE mode)
+    pub fn sendResponse(self: *H3Event) !void {
+        if (self.sse_started) return error.SSEAlreadyStarted;
+        if (self.response_sent) return error.ResponseAlreadySent;
+        
+        self.response_sent = true;
+        // The actual sending is handled by the server adapter
     }
 };
 
