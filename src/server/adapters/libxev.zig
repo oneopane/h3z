@@ -514,10 +514,10 @@ pub const LibxevAdapter = struct {
     }
 
     /// Create a streaming connection for SSE
-    pub fn createConnection(self: *Self, tcp: xev.TCP) !*@import("../connection.zig").Connection {
+    pub fn createConnection(self: *Self, tcp: xev.TCP) !*@import("../sse_connection.zig").SSEConnection {
         if (self.loop) |loop| {
             const libxev_conn = try LibxevConnection.init(self.allocator, tcp, loop);
-            const conn = try self.allocator.create(@import("../connection.zig").Connection);
+            const conn = try self.allocator.create(@import("../sse_connection.zig").SSEConnection);
             conn.* = .{ .libxev = libxev_conn };
             return conn;
         }
@@ -797,7 +797,7 @@ pub const LibxevConnection = struct {
     }
 
     /// Write a chunk of data without closing the connection
-    pub fn writeChunk(self: *LibxevConnection, data: []const u8) @import("../connection.zig").ConnectionError!void {
+    pub fn writeChunk(self: *LibxevConnection, data: []const u8) @import("../sse_connection.zig").SSEConnectionError!void {
         if (self.closed) return error.ConnectionClosed;
         if (!self.streaming_mode) return error.NotStreamingMode;
 
@@ -875,7 +875,7 @@ pub const LibxevConnection = struct {
     }
 
     /// Flush any buffered data immediately
-    pub fn flush(self: *LibxevConnection) @import("../connection.zig").ConnectionError!void {
+    pub fn flush(self: *LibxevConnection) @import("../sse_connection.zig").SSEConnectionError!void {
         if (self.closed) return error.ConnectionClosed;
         // In libxev, writes are already async, so this is a no-op
         // The write queue is continuously processed

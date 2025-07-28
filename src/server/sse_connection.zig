@@ -1,11 +1,11 @@
-//! Connection abstraction layer for H3Z
-//! Provides a unified interface for streaming data across different server adapters
-//! Enables SSE (Server-Sent Events) and other streaming protocols
+//! SSE (Server-Sent Events) connection abstraction layer for H3Z
+//! Provides a unified interface for SSE streaming across different server adapters
+//! Enables real-time server-to-client event streaming
 
 const std = @import("std");
 
-/// Connection error set for streaming operations
-pub const ConnectionError = error{
+/// SSE connection error set for streaming operations
+pub const SSEConnectionError = error{
     ConnectionClosed,
     WriteError,
     BufferFull,
@@ -17,15 +17,15 @@ pub const ConnectionError = error{
 pub const LibxevConnection = @import("adapters/libxev.zig").LibxevConnection;
 pub const StdConnection = @import("adapters/std.zig").StdConnection;
 
-/// Unified connection interface as a tagged union
-/// Allows adapter-agnostic streaming operations
-pub const Connection = union(enum) {
+/// Unified SSE connection interface as a tagged union
+/// Allows adapter-agnostic SSE streaming operations
+pub const SSEConnection = union(enum) {
     libxev: *LibxevConnection,
     std: *StdConnection,
 
     /// Write a chunk of data without closing the connection
     /// Used for streaming protocols like SSE
-    pub fn writeChunk(self: Connection, data: []const u8) ConnectionError!void {
+    pub fn writeChunk(self: SSEConnection, data: []const u8) SSEConnectionError!void {
         return switch (self) {
             .libxev => |conn| conn.writeChunk(data),
             .std => |conn| conn.writeChunk(data),
@@ -34,7 +34,7 @@ pub const Connection = union(enum) {
 
     /// Flush any buffered data immediately
     /// Forces transmission of pending data
-    pub fn flush(self: Connection) ConnectionError!void {
+    pub fn flush(self: SSEConnection) SSEConnectionError!void {
         return switch (self) {
             .libxev => |conn| conn.flush(),
             .std => |conn| conn.flush(),
@@ -43,7 +43,7 @@ pub const Connection = union(enum) {
 
     /// Close the connection gracefully
     /// Cleans up resources and notifies the remote end
-    pub fn close(self: Connection) void {
+    pub fn close(self: SSEConnection) void {
         switch (self) {
             .libxev => |conn| conn.close(),
             .std => |conn| conn.close(),
@@ -52,7 +52,7 @@ pub const Connection = union(enum) {
 
     /// Check if the connection is still alive
     /// Returns false if the connection has been closed or errored
-    pub fn isAlive(self: Connection) bool {
+    pub fn isAlive(self: SSEConnection) bool {
         return switch (self) {
             .libxev => |conn| conn.isAlive(),
             .std => |conn| conn.isAlive(),
@@ -60,7 +60,7 @@ pub const Connection = union(enum) {
     }
 
     /// Get the adapter type for this connection
-    pub fn getAdapterType(self: Connection) AdapterType {
+    pub fn getAdapterType(self: SSEConnection) AdapterType {
         return switch (self) {
             .libxev => .libxev,
             .std => .std,
@@ -74,8 +74,8 @@ pub const AdapterType = enum {
     std,
 };
 
-/// Connection capabilities and state
-pub const ConnectionState = enum {
+/// SSE connection capabilities and state
+pub const SSEConnectionState = enum {
     /// Initial state, ready for first write
     init,
     /// Active streaming mode (e.g., SSE active)
@@ -86,8 +86,8 @@ pub const ConnectionState = enum {
     closed,
 };
 
-/// Connection metrics for monitoring
-pub const ConnectionMetrics = struct {
+/// SSE connection metrics for monitoring
+pub const SSEConnectionMetrics = struct {
     /// Total bytes written
     bytes_written: usize = 0,
     /// Total write operations
@@ -100,15 +100,15 @@ pub const ConnectionMetrics = struct {
     last_activity: i64 = 0,
 };
 
-test "Connection interface methods" {
-    // This test verifies that the Connection interface is properly defined
+test "SSEConnection interface methods" {
+    // This test verifies that the SSEConnection interface is properly defined
     // Actual testing will be done once the adapter implementations are complete
     
-    // Verify that our ConnectionError set has the expected errors
-    try std.testing.expect(@typeInfo(ConnectionError).error_set != null);
+    // Verify that our SSEConnectionError set has the expected errors
+    try std.testing.expect(@typeInfo(SSEConnectionError).error_set != null);
     
     // Verify specific errors exist
-    const error_set = @typeInfo(ConnectionError).error_set.?;
+    const error_set = @typeInfo(SSEConnectionError).error_set.?;
     var has_connection_closed = false;
     var has_write_error = false;
     var has_buffer_full = false;

@@ -322,9 +322,9 @@ pub const StdAdapter = struct {
     }
 
     /// Create a streaming connection for SSE
-    pub fn createConnection(self: *Self, stream: std.net.Stream) !*@import("../connection.zig").Connection {
+    pub fn createConnection(self: *Self, stream: std.net.Stream) !*@import("../sse_connection.zig").SSEConnection {
         const std_conn = try StdConnection.init(self.allocator, stream);
-        const conn = try self.allocator.create(@import("../connection.zig").Connection);
+        const conn = try self.allocator.create(@import("../sse_connection.zig").SSEConnection);
         conn.* = .{ .std = std_conn };
         return conn;
     }
@@ -364,7 +364,7 @@ pub const StdConnection = struct {
     }
 
     /// Write a chunk of data without closing the connection
-    pub fn writeChunk(self: *StdConnection, data: []const u8) @import("../connection.zig").ConnectionError!void {
+    pub fn writeChunk(self: *StdConnection, data: []const u8) @import("../sse_connection.zig").SSEConnectionError!void {
         if (self.closed) return error.ConnectionClosed;
         if (!self.streaming_mode) return error.NotStreamingMode;
 
@@ -391,7 +391,7 @@ pub const StdConnection = struct {
     }
 
     /// Flush any buffered data immediately
-    pub fn flush(self: *StdConnection) @import("../connection.zig").ConnectionError!void {
+    pub fn flush(self: *StdConnection) @import("../sse_connection.zig").SSEConnectionError!void {
         if (self.closed) return error.ConnectionClosed;
         
         if (self.buffer_len > 0) {
