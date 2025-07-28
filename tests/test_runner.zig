@@ -51,7 +51,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Test app creation
-    var app = h3.createApp(allocator);
+    var app = try h3.createApp(allocator);
     defer app.deinit();
 
     std.log.info("  ✅ App creation: OK", .{});
