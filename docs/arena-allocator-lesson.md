@@ -58,8 +58,21 @@ The arena allocator not only fixed our bug but improved performance:
 - Better memory locality (allocations are contiguous)
 - `reset(.retain_capacity)` reuses memory buffers in our object pool
 
+## The Zig Learning Curve
+
+This bug also highlights an important aspect of learning a new language: knowing the idiomatic patterns and available tools. Coming from languages with garbage collection or different memory management models, it's natural to reach for manual allocation/deallocation patterns. But Zig provides powerful allocator abstractions for exactly these scenarios:
+
+- **Arena Allocator**: Perfect for temporary allocations with shared lifetime
+- **FixedBufferAllocator**: When you know the max size upfront
+- **StackFallbackAllocator**: Try stack first, fall back to heap
+- **GeneralPurposeAllocator**: Debug allocator with leak detection
+
+The bug wasn't just about memory management - it was about not knowing that Zig already solved this problem elegantly.
+
 ## Key Takeaway
 
 When you find yourself fighting complex coordination problems, step back and ask: "Is there an abstraction that would make this problem disappear?" Sometimes the best debugging is choosing a design where the bug cannot exist.
 
 In our case, the arena allocator transformed a tricky memory management puzzle into a trivial "allocate together, free together" pattern. The bug didn't need to be fixed - it needed to be made impossible.
+
+**The meta-lesson**: When learning a new language, invest time in understanding its standard library and idiomatic patterns. Often, the language designers have already encountered and elegantly solved the exact problem you're struggling with.
