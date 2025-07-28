@@ -92,6 +92,7 @@ pub const utils = struct {
     pub const security = @import("utils/security.zig");
     pub const proxy = @import("utils/proxy.zig");
     pub const body = @import("utils/body.zig");
+    pub const string_format = @import("utils/string_format.zig");
 };
 
 // Internal modules
