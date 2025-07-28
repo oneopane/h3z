@@ -81,6 +81,9 @@ pub const HeaderNames = struct {
     pub const X_FORWARDED_PROTO = "X-Forwarded-Proto";
     pub const X_FORWARDED_SSL = "X-Forwarded-SSL";
     pub const X_REAL_IP = "X-Real-IP";
+    
+    // SSE headers
+    pub const X_ACCEL_BUFFERING = "X-Accel-Buffering";
 };
 
 /// Common MIME types
@@ -103,6 +106,7 @@ pub const MimeTypes = struct {
     pub const VIDEO_MP4 = "video/mp4";
     pub const APPLICATION_PDF = "application/pdf";
     pub const APPLICATION_ZIP = "application/zip";
+    pub const TEXT_EVENT_STREAM = "text/event-stream";
 };
 
 /// Helper functions for working with headers
