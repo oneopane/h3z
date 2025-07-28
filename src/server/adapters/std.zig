@@ -364,7 +364,7 @@ pub const StdConnection = struct {
     }
 
     /// Write a chunk of data without closing the connection
-    pub fn writeChunk(self: *StdConnection, data: []const u8) !void {
+    pub fn writeChunk(self: *StdConnection, data: []const u8) @import("../connection.zig").ConnectionError!void {
         if (self.closed) return error.ConnectionClosed;
         if (!self.streaming_mode) return error.NotStreamingMode;
 
@@ -391,7 +391,7 @@ pub const StdConnection = struct {
     }
 
     /// Flush any buffered data immediately
-    pub fn flush(self: *StdConnection) !void {
+    pub fn flush(self: *StdConnection) @import("../connection.zig").ConnectionError!void {
         if (self.closed) return error.ConnectionClosed;
         
         if (self.buffer_len > 0) {

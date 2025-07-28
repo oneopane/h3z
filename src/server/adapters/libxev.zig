@@ -48,6 +48,7 @@ pub const LibxevAdapter = struct {
         id: usize = 0,
         read_active: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         write_active: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        streaming_connection: ?*LibxevConnection = null, // For SSE support
 
         fn init(adapter: *LibxevAdapter, tcp: xev.TCP, remote_addr: std.net.Address) !*Connection {
             const conn = try adapter.allocator.create(Connection);
@@ -72,7 +73,14 @@ pub const LibxevAdapter = struct {
             return conn;
         }
 
-        fn deinit(_: *Connection) void {
+        fn deinit(self: *Connection) void {
+            // Clean up streaming connection if exists
+            if (self.streaming_connection) |conn| {
+                conn.deinit();
+                self.allocator.destroy(conn);
+                self.streaming_connection = null;
+            }
+            
             // Safely log connection destruction info without accessing any object properties
             logger.logDefault(.debug, .connection, "[Connection Destroy] Connection memory about to be freed", .{});
             // Note: Actual memory deallocation is handled in onCloseCallback
@@ -318,6 +326,22 @@ pub const LibxevAdapter = struct {
             const current_time = std.time.timestamp();
             const connection_age = current_time - self.context.start_time;
             return connection_age > 30; // 30 seconds timeout
+        }
+
+        /// Create a streaming connection for SSE
+        fn createStreamingConnection(self: *Connection, loop: *xev.Loop) !*LibxevConnection {
+            if (self.streaming_connection) |conn| {
+                return conn;
+            }
+            
+            const conn = try LibxevConnection.init(self.allocator, self.tcp, loop);
+            conn.enableStreamingMode();
+            self.streaming_connection = conn;
+            
+            // Mark this connection to stay alive even after response
+            self.keep_alive = true;
+            
+            return conn;
         }
     };
 
@@ -660,6 +684,16 @@ pub const LibxevAdapter = struct {
 
         logger.logDefault(.debug, .connection, "Sent {} bytes to connection", .{bytes_written});
 
+        // Check if this connection has an associated LibxevConnection in streaming mode
+        // In that case, we should keep the connection alive regardless of keep-alive header
+        if (conn.streaming_connection) |stream_conn| {
+            if (stream_conn.streaming_mode and !stream_conn.closed) {
+                logger.logDefault(.debug, .connection, "Keeping connection alive (SSE streaming)", .{});
+                // Don't start reading again for SSE connections
+                return .disarm;
+            }
+        }
+
         // If it's a keep-alive connection, continue reading the next request
         if (conn.keep_alive) {
             logger.logDefault(.debug, .connection, "Keeping connection alive (Keep-Alive)", .{});
@@ -763,7 +797,7 @@ pub const LibxevConnection = struct {
     }
 
     /// Write a chunk of data without closing the connection
-    pub fn writeChunk(self: *LibxevConnection, data: []const u8) !void {
+    pub fn writeChunk(self: *LibxevConnection, data: []const u8) @import("../connection.zig").ConnectionError!void {
         if (self.closed) return error.ConnectionClosed;
         if (!self.streaming_mode) return error.NotStreamingMode;
 
@@ -773,11 +807,14 @@ pub const LibxevConnection = struct {
         }
 
         // Copy data to owned memory
-        const data_copy = try self.allocator.alloc(u8, data.len);
+        const data_copy = self.allocator.alloc(u8, data.len) catch return error.AllocationError;
         @memcpy(data_copy, data);
 
         // Queue the data
-        try self.write_queue.append(data_copy);
+        self.write_queue.append(data_copy) catch {
+            self.allocator.free(data_copy);
+            return error.AllocationError;
+        };
         self.bytes_queued += data.len;
 
         // If no write is in progress, start one
@@ -838,7 +875,7 @@ pub const LibxevConnection = struct {
     }
 
     /// Flush any buffered data immediately
-    pub fn flush(self: *LibxevConnection) !void {
+    pub fn flush(self: *LibxevConnection) @import("../connection.zig").ConnectionError!void {
         if (self.closed) return error.ConnectionClosed;
         // In libxev, writes are already async, so this is a no-op
         // The write queue is continuously processed
