@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+IMPORTANT: This repo uses Jujutse (jj) for version control. You MUST use jj. You MUST NOT use git.
+
 ## Project Overview
 
 H3 is a minimal, fast, and composable HTTP server framework for Zig, inspired by H3.js. It features:

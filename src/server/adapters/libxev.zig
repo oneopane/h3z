@@ -259,7 +259,7 @@ pub const LibxevAdapter = struct {
         fn startRead(self: *Connection, loop: *xev.Loop) void {
             // Use the TCP read method instead of manual completion
             self.read_active.store(true, .seq_cst);
-            logger.logDefault(.debug, .general, "[SUBMIT READ] conn_id={}, compl_ptr={}", .{ self.id, &self.read_completion });
+            logger.logDefault(.debug, .general, "[SUBMIT READ] conn_id={}", .{self.id});
             self.tcp.read(loop, &self.read_completion, .{ .slice = &self.buffer }, Connection, self, onReadCallback);
         }
 
