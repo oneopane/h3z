@@ -220,6 +220,26 @@ graph TD
 - Method-specific routing
 - LRU cache for frequently accessed routes
 
+#### Handlers: The API Entry Points
+
+In H3Z, a **handler** is a function that processes HTTP requests for a specific endpoint. Handlers are the thin entry points where HTTP requests meet your business logic:
+
+```zig
+// Handler signature
+fn myHandler(event: *H3Event) !void {
+    // 1. Extract request data (params, body, headers)
+    // 2. Call business logic (services, repositories)
+    // 3. Generate HTTP response
+}
+```
+
+Handlers serve the same purpose as route functions in other frameworks:
+- **Express.js**: `app.get('/users', (req, res) => { ... })`
+- **FastAPI**: `@router.get("/users") async def get_users(): ...`
+- **H3Z**: `app.get("/users", getUsersHandler)`
+
+The key architectural principle is to keep handlers **thin** - they should focus on HTTP concerns (parsing requests, formatting responses) and delegate actual business logic to service layers. This separation ensures your business logic remains testable and framework-agnostic.
+
 ### 4. Middleware System
 
 Two middleware implementations cater to different needs:

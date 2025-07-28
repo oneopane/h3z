@@ -4,7 +4,6 @@
 const std = @import("std");
 const HttpMethod = @import("../http/method.zig").HttpMethod;
 const H3Event = @import("event.zig").H3Event;
-const TrieRouter = @import("trie_router.zig").TrieRouter;
 const RouteCache = @import("route_cache.zig").RouteCache;
 const config = @import("config.zig");
 const component = @import("component.zig");
@@ -95,88 +94,291 @@ pub const RouteParamsPool = struct {
     }
 };
 
-/// Route entry with compiled pattern
-pub const Route = struct {
-    method: HttpMethod,
-    pattern: []const u8,
-    handler: Handler,
-    compiled_pattern: ?CompiledPattern,
+/// Trie node for efficient route matching (internal implementation)
+const TrieNode = struct {
+    // Static path segments (exact matches)
+    children: std.HashMap([]const u8, *TrieNode, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
 
-    pub fn compile(self: *Route, allocator: std.mem.Allocator) !void {
-        self.compiled_pattern = try CompiledPattern.compile(allocator, self.pattern);
-    }
-};
+    // Parameter node (matches any segment)
+    param_child: ?*TrieNode = null,
+    param_name: ?[]const u8 = null,
 
-/// Compiled route pattern for fast matching
-pub const CompiledPattern = struct {
-    segments: []Segment,
+    // Wildcard node (matches remaining path)
+    wildcard_child: ?*TrieNode = null,
+
+    // Handler for this exact path
+    handler: ?Handler = null,
+
+    // Method-specific handlers and patterns
+    method_handlers: [std.meta.fields(HttpMethod).len]?Handler,
+    method_patterns: [std.meta.fields(HttpMethod).len]?[]const u8,
+
     allocator: std.mem.Allocator,
 
-    const Segment = union(enum) {
-        static: []const u8,
-        param: []const u8,
-        wildcard,
-    };
+    pub fn init(allocator: std.mem.Allocator) !*TrieNode {
+        const node = try allocator.create(TrieNode);
+        node.* = TrieNode{
+            .children = std.HashMap([]const u8, *TrieNode, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
+            .method_handlers = [_]?Handler{null} ** std.meta.fields(HttpMethod).len,
+            .method_patterns = [_]?[]const u8{null} ** std.meta.fields(HttpMethod).len,
+            .allocator = allocator,
+        };
+        return node;
+    }
 
-    pub fn compile(allocator: std.mem.Allocator, pattern: []const u8) !CompiledPattern {
-        var segments = std.ArrayList(Segment).init(allocator);
-        defer segments.deinit();
+    pub fn deinit(self: *TrieNode) void {
+        if (self.children.count() > 0) {
+            var keys_to_remove = std.ArrayList([]const u8).init(self.allocator);
+            defer keys_to_remove.deinit();
 
-        var parts = std.mem.splitScalar(u8, pattern, '/');
-        while (parts.next()) |part| {
-            if (part.len == 0) continue;
+            var iter = self.children.iterator();
+            while (iter.next()) |entry| {
+                keys_to_remove.append(entry.key_ptr.*) catch {};
+            }
 
-            if (std.mem.startsWith(u8, part, ":")) {
-                try segments.append(.{ .param = part[1..] });
-            } else if (std.mem.eql(u8, part, "*")) {
-                try segments.append(.wildcard);
-            } else {
-                try segments.append(.{ .static = part });
+            for (keys_to_remove.items) |key| {
+                if (self.children.get(key)) |child| {
+                    child.deinit();
+                    _ = self.children.remove(key);
+                    // Free the key since we duplicated it during insertion
+                    self.allocator.free(key);
+                }
             }
         }
 
-        return CompiledPattern{
-            .segments = try segments.toOwnedSlice(),
+        self.children.deinit();
+
+        if (self.param_child) |child| {
+            child.deinit();
+        }
+
+        if (self.wildcard_child) |child| {
+            child.deinit();
+        }
+
+        self.allocator.destroy(self);
+    }
+
+    /// Insert a route into the trie
+    pub fn insert(self: *TrieNode, path: []const u8, method: HttpMethod, handler: Handler) !void {
+        var current = self;
+        var path_iter = std.mem.splitScalar(u8, path, '/');
+
+        while (path_iter.next()) |segment| {
+            if (segment.len == 0) continue;
+
+            if (std.mem.startsWith(u8, segment, ":")) {
+                // Parameter segment
+                const param_name = segment[1..];
+
+                if (current.param_child == null) {
+                    current.param_child = try TrieNode.init(current.allocator);
+                    current.param_name = param_name;
+                }
+                current = current.param_child.?;
+            } else if (std.mem.eql(u8, segment, "*")) {
+                // Wildcard segment
+                if (current.wildcard_child == null) {
+                    current.wildcard_child = try TrieNode.init(current.allocator);
+                }
+                current = current.wildcard_child.?;
+                break; // Wildcard consumes rest of path
+            } else {
+                // Static segment - need to duplicate the key since it might be temporary
+                const segment_copy = try current.allocator.dupe(u8, segment);
+                const result = try current.children.getOrPut(segment_copy);
+                if (!result.found_existing) {
+                    result.value_ptr.* = try TrieNode.init(current.allocator);
+                } else {
+                    // Free the copy if we didn't use it
+                    current.allocator.free(segment_copy);
+                }
+                current = result.value_ptr.*;
+            }
+        }
+
+        // Set handler and pattern for this method
+        const method_index = @intFromEnum(method);
+        current.method_handlers[method_index] = handler;
+        current.method_patterns[method_index] = path;
+    }
+
+    /// Search for a route in the trie
+    pub fn search(self: *TrieNode, path: []const u8, method: HttpMethod, params: *RouteParams) ?SearchResult {
+        return self.searchRecursive(path, method, params, 0);
+    }
+
+    fn searchRecursive(self: *TrieNode, path: []const u8, method: HttpMethod, params: *RouteParams, start_pos: usize) ?SearchResult {
+        // Find next segment
+        var pos = start_pos;
+        while (pos < path.len and path[pos] == '/') pos += 1;
+
+        if (pos >= path.len) {
+            // End of path - check if we have a handler for this method
+            const method_index = @intFromEnum(method);
+            if (self.method_handlers[method_index]) |handler| {
+                const pattern = self.method_patterns[method_index] orelse "";
+                return .{ .handler = handler, .pattern = pattern };
+            }
+            return null;
+        }
+
+        // Find end of current segment
+        var end_pos = pos;
+        while (end_pos < path.len and path[end_pos] != '/') end_pos += 1;
+
+        const segment = path[pos..end_pos];
+
+        // Try static match first (most specific)
+        if (self.children.get(segment)) |child| {
+            if (child.searchRecursive(path, method, params, end_pos)) |result| {
+                return result;
+            }
+        }
+
+        // Try parameter match
+        if (self.param_child) |child| {
+            if (self.param_name) |param_name| {
+                params.put(param_name, segment) catch {};
+                if (child.searchRecursive(path, method, params, end_pos)) |result| {
+                    return result;
+                }
+                // Remove parameter if match failed
+                _ = params.params.remove(param_name);
+            }
+        }
+
+        // Try wildcard match (least specific)
+        if (self.wildcard_child) |child| {
+            const method_index = @intFromEnum(method);
+            if (child.method_handlers[method_index]) |handler| {
+                const pattern = child.method_patterns[method_index] orelse "";
+                return .{ .handler = handler, .pattern = pattern };
+            }
+        }
+
+        return null;
+    }
+};
+
+/// Search result from Trie
+const SearchResult = struct {
+    handler: Handler,
+    pattern: []const u8,
+};
+
+/// Trie-based route match result
+const TrieRouteMatch = struct {
+    handler: Handler,
+    params: *RouteParams,
+    pattern: []const u8,
+};
+
+/// High-performance Trie-based router (internal implementation)
+const TrieRouter = struct {
+    // Separate trie for each HTTP method for maximum performance
+    method_tries: [std.meta.fields(HttpMethod).len]*TrieNode,
+    params_pool: RouteParamsPool,
+    allocator: std.mem.Allocator,
+
+    // Performance statistics
+    route_count: usize = 0,
+    search_count: usize = 0,
+    cache_hits: usize = 0,
+
+    pub fn init(allocator: std.mem.Allocator) !TrieRouter {
+        var method_tries: [std.meta.fields(HttpMethod).len]*TrieNode = undefined;
+
+        // Initialize a separate trie for each HTTP method
+        inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
+            method_tries[i] = try TrieNode.init(allocator);
+        }
+
+        return TrieRouter{
+            .method_tries = method_tries,
+            .params_pool = RouteParamsPool.init(allocator, 200), // Larger pool for better performance
             .allocator = allocator,
         };
     }
 
-    pub fn deinit(self: *CompiledPattern) void {
-        if (self.segments.len > 0) {
-            self.allocator.free(self.segments);
+    pub fn deinit(self: *TrieRouter) void {
+        inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
+            self.method_tries[i].deinit();
         }
+        self.params_pool.deinit();
     }
 
-    pub fn match(self: *const CompiledPattern, path: []const u8, params: *RouteParams) bool {
-        var path_parts = std.mem.splitScalar(u8, path, '/');
-        var segment_index: usize = 0;
+    /// Add a route to the trie
+    pub fn addRoute(self: *TrieRouter, method: HttpMethod, path: []const u8, handler: Handler) !void {
+        const method_index = @intFromEnum(method);
+        try self.method_tries[method_index].insert(path, method, handler);
+        self.route_count += 1;
+    }
 
-        while (path_parts.next()) |part| {
-            if (part.len == 0) continue;
+    /// Find a route using trie search - O(log n) performance
+    pub fn findRoute(self: *TrieRouter, method: HttpMethod, path: []const u8) ?TrieRouteMatch {
+        self.search_count += 1;
 
-            if (segment_index >= self.segments.len) {
-                return false;
-            }
+        const method_index = @intFromEnum(method);
+        const trie = self.method_tries[method_index];
 
-            const segment = self.segments[segment_index];
-            switch (segment) {
-                .static => |static_part| {
-                    if (!std.mem.eql(u8, static_part, part)) {
-                        return false;
-                    }
-                },
-                .param => |param_name| {
-                    params.put(param_name, part) catch return false;
-                },
-                .wildcard => {
-                    return true; // Wildcard matches everything
-                },
-            }
-            segment_index += 1;
+        const params = self.params_pool.acquire() catch return null;
+
+        if (trie.search(path, method, params)) |result| {
+            return TrieRouteMatch{
+                .handler = result.handler,
+                .params = params,
+                .pattern = result.pattern,
+            };
         }
 
-        return segment_index == self.segments.len;
+        // No match found, release params
+        self.params_pool.release(params);
+        return null;
     }
+
+    /// Release route match resources
+    pub fn releaseMatch(self: *TrieRouter, match: TrieRouteMatch) void {
+        self.params_pool.release(match.params);
+    }
+
+    /// Get performance statistics
+    pub fn getStats(self: *const TrieRouter) struct {
+        route_count: usize,
+        search_count: usize,
+        cache_hits: usize,
+        hit_ratio: f64,
+    } {
+        const hit_ratio = if (self.search_count > 0)
+            @as(f64, @floatFromInt(self.cache_hits)) / @as(f64, @floatFromInt(self.search_count))
+        else
+            0.0;
+
+        return .{
+            .route_count = self.route_count,
+            .search_count = self.search_count,
+            .cache_hits = self.cache_hits,
+            .hit_ratio = hit_ratio,
+        };
+    }
+
+    /// Clear all routes
+    pub fn clear(self: *TrieRouter) void {
+        inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
+            self.method_tries[i].deinit();
+            self.method_tries[i] = TrieNode.init(self.allocator) catch unreachable;
+        }
+        self.route_count = 0;
+        self.search_count = 0;
+        self.cache_hits = 0;
+    }
+};
+
+/// Route entry
+pub const Route = struct {
+    method: HttpMethod,
+    pattern: []const u8,
+    handler: Handler,
 };
 
 /// Route match result
@@ -201,23 +403,15 @@ pub const Router = struct {
     allocator: std.mem.Allocator,
 
     // Performance configuration
-    config: RouterConfig,
-
-    const RouterConfig = struct {
-        enable_cache: bool = false,
-        cache_size: usize = 1000,
-        enable_trie: bool = false,
-        enable_compile_time_optimization: bool = true,
-        enable_route_compilation: bool = true,
-    };
+    config: config.RouterConfig,
 
     /// Initialize a new ultra-high-performance router
     pub fn init(allocator: std.mem.Allocator) !Router {
-        return Router.initWithConfig(allocator, RouterConfig{});
+        return Router.initWithConfig(allocator, config.RouterConfig{});
     }
 
     /// Initialize router with custom configuration
-    pub fn initWithConfig(allocator: std.mem.Allocator, router_config: RouterConfig) !Router {
+    pub fn initWithConfig(allocator: std.mem.Allocator, router_config: config.RouterConfig) !Router {
         var method_routes: [std.meta.fields(HttpMethod).len]std.ArrayList(Route) = undefined;
 
         inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
@@ -228,7 +422,7 @@ pub const Router = struct {
         errdefer trie_router.deinit();
 
         // Use smaller pool size for testing to reduce memory overhead
-        const pool_size: usize = if (router_config.enable_route_compilation) 200 else 10;
+        const pool_size: usize = 10;
 
         return Router{
             .trie_router = trie_router,
@@ -248,11 +442,6 @@ pub const Router = struct {
         }
 
         inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
-            for (self.method_routes[i].items) |*route| {
-                if (route.compiled_pattern) |*pattern| {
-                    pattern.deinit();
-                }
-            }
             self.method_routes[i].deinit();
         }
         self.params_pool.deinit();
@@ -263,20 +452,13 @@ pub const Router = struct {
         const method_index = @intFromEnum(method);
 
         // Add to Trie router for O(log n) lookups
-        if (self.config.enable_trie) {
-            try self.trie_router.addRoute(method, pattern, handler);
-        }
+        try self.trie_router.addRoute(method, pattern, handler);
 
-        var route = Route{
+        const route = Route{
             .method = method,
             .pattern = pattern,
             .handler = handler,
-            .compiled_pattern = null,
         };
-
-        if (self.config.enable_route_compilation) {
-            try route.compile(self.allocator);
-        }
         try self.method_routes[method_index].append(route);
     }
 
@@ -303,55 +485,18 @@ pub const Router = struct {
         }
 
         // Tier 2: Trie router lookup (O(log n))
-        if (self.config.enable_trie) {
-            if (self.trie_router.findRoute(method, path)) |trie_match| {
-                // Cache the result for future lookups
-                if (self.config.enable_cache) {
-                    self.route_cache.put(method, path, trie_match.handler, trie_match.params.params) catch {};
-                }
-
-                return RouteMatch{
-                    .handler = trie_match.handler,
-                    .params = trie_match.params,
-                    .method = method,
-                    .pattern = path,
-                };
-            }
-        }
-
-        // Tier 3: Legacy linear search fallback
-        return self.findRouteLegacy(method, path);
-    }
-
-    /// Legacy route finding for compatibility
-    fn findRouteLegacy(self: *Router, method: HttpMethod, path: []const u8) ?RouteMatch {
-        const method_index = @intFromEnum(method);
-        const routes = &self.method_routes[method_index];
-
-        for (routes.items) |*route| {
-            const params = self.params_pool.acquire() catch return null;
-
-            if (route.compiled_pattern) |*pattern| {
-                if (pattern.match(path, params)) {
-                    return RouteMatch{
-                        .handler = route.handler,
-                        .params = params,
-                        .method = route.method,
-                        .pattern = route.pattern,
-                    };
-                }
-            } else {
-                if (self.matchPatternSimple(route.pattern, path, params)) {
-                    return RouteMatch{
-                        .handler = route.handler,
-                        .params = params,
-                        .method = route.method,
-                        .pattern = route.pattern,
-                    };
-                }
+        if (self.trie_router.findRoute(method, path)) |trie_match| {
+            // Cache the result for future lookups
+            if (self.config.enable_cache) {
+                self.route_cache.put(method, path, trie_match.handler, trie_match.params.params) catch {};
             }
 
-            self.params_pool.release(params);
+            return RouteMatch{
+                .handler = trie_match.handler,
+                .params = trie_match.params,
+                .method = method,
+                .pattern = trie_match.pattern,
+            };
         }
 
         return null;
@@ -360,57 +505,6 @@ pub const Router = struct {
     /// Release route match resources
     pub fn releaseMatch(self: *Router, match: RouteMatch) void {
         self.params_pool.release(match.params);
-    }
-
-    /// Simple pattern matching fallback for non-compiled patterns
-    fn matchPatternSimple(self: *const Router, pattern: []const u8, path: []const u8, params: *RouteParams) bool {
-        _ = self;
-
-        // Simple exact match for now
-        if (std.mem.eql(u8, pattern, path)) {
-            return true;
-        }
-
-        // Handle parameter patterns like /users/:id
-        var pattern_parts = std.mem.splitSequence(u8, pattern, "/");
-        var path_parts = std.mem.splitSequence(u8, path, "/");
-
-        while (true) {
-            const pattern_part = pattern_parts.next();
-            const path_part = path_parts.next();
-
-            // Both exhausted - match
-            if (pattern_part == null and path_part == null) {
-                return true;
-            }
-
-            // One exhausted but not the other - no match
-            if (pattern_part == null or path_part == null) {
-                return false;
-            }
-
-            const pp = pattern_part.?;
-            const path_p = path_part.?;
-
-            // Parameter pattern (starts with :)
-            if (pp.len > 0 and pp[0] == ':') {
-                const param_name = pp[1..];
-                params.put(param_name, path_p) catch return false;
-                continue;
-            }
-
-            // Wildcard pattern (*)
-            if (std.mem.eql(u8, pp, "*")) {
-                // Consume remaining path parts
-                while (path_parts.next() != null) {}
-                return true;
-            }
-
-            // Exact match required
-            if (!std.mem.eql(u8, pp, path_p)) {
-                return false;
-            }
-        }
     }
 
     /// Get all routes for debugging (returns routes from all methods)
@@ -435,11 +529,6 @@ pub const Router = struct {
     /// Clear all routes
     pub fn clear(self: *Router) void {
         inline for (std.meta.fields(HttpMethod), 0..) |_, i| {
-            for (self.method_routes[i].items) |*route| {
-                if (route.compiled_pattern) |*pattern| {
-                    pattern.deinit();
-                }
-            }
             self.method_routes[i].clearAndFree();
         }
     }
@@ -463,13 +552,7 @@ pub const RouterComponent = struct {
 
     /// Create a new router component
     pub fn init(allocator: std.mem.Allocator, router_config: config.RouterConfig) !Self {
-        const router = try Router.initWithConfig(allocator, Router.RouterConfig{
-            .enable_cache = router_config.enable_cache,
-            .cache_size = router_config.cache_size,
-            .enable_trie = router_config.enable_trie,
-            .enable_compile_time_optimization = router_config.enable_compile_time_optimization,
-            .enable_route_compilation = router_config.enable_route_compilation,
-        });
+        const router = try Router.initWithConfig(allocator, router_config);
 
         return Self{
             .base = .{
@@ -579,59 +662,7 @@ test "Router.addRoute and findRoute" {
     router.releaseMatch(result3.?);
 }
 
-test "Router.matchPatternSimple exact" {
-    var router = try Router.init(std.testing.allocator);
-    defer router.deinit();
 
-    var params = RouteParams.init(std.testing.allocator);
-    defer params.deinit();
-
-    try std.testing.expect(router.matchPatternSimple("/api/users", "/api/users", &params));
-    try std.testing.expect(!router.matchPatternSimple("/api/users", "/api/posts", &params));
-}
-
-test "Router.matchPatternSimple parameters" {
-    var router = try Router.init(std.testing.allocator);
-    defer router.deinit();
-
-    var params = RouteParams.init(std.testing.allocator);
-    defer params.deinit();
-
-    try std.testing.expect(router.matchPatternSimple("/users/:id", "/users/123", &params));
-    try std.testing.expectEqualStrings("123", params.get("id").?);
-
-    params.reset();
-    try std.testing.expect(router.matchPatternSimple("/users/:id/posts/:postId", "/users/123/posts/456", &params));
-    try std.testing.expectEqualStrings("123", params.get("id").?);
-    try std.testing.expectEqualStrings("456", params.get("postId").?);
-}
-
-test "Router.matchPatternSimple wildcard" {
-    var router = try Router.init(std.testing.allocator);
-    defer router.deinit();
-
-    var params = RouteParams.init(std.testing.allocator);
-    defer params.deinit();
-
-    try std.testing.expect(router.matchPatternSimple("/static/*", "/static/css/style.css", &params));
-    try std.testing.expect(router.matchPatternSimple("/api/*", "/api/v1/users/123", &params));
-    try std.testing.expect(!router.matchPatternSimple("/static/*", "/api/users", &params));
-}
-
-test "CompiledPattern.compile and match" {
-    var pattern = try CompiledPattern.compile(std.testing.allocator, "/users/:id/posts/:postId");
-    defer pattern.deinit();
-
-    var params = RouteParams.init(std.testing.allocator);
-    defer params.deinit();
-
-    try std.testing.expect(pattern.match("/users/123/posts/456", &params));
-    try std.testing.expectEqualStrings("123", params.get("id").?);
-    try std.testing.expectEqualStrings("456", params.get("postId").?);
-
-    params.reset();
-    try std.testing.expect(!pattern.match("/users/123", &params));
-}
 
 test "RouteParamsPool acquire and release" {
     var pool = RouteParamsPool.init(std.testing.allocator, 2);

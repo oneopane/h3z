@@ -125,7 +125,6 @@ pub fn createFastApp(allocator: std.mem.Allocator) !App {
         .use_event_pool = true,
         .event_pool_size = 200,
         .use_fast_middleware = true,
-        .enable_route_compilation = true,
     };
     return App.initWithConfig(allocator, app_config);
 }
