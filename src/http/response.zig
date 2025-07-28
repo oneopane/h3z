@@ -32,6 +32,9 @@ pub const Response = struct {
     /// Allocator used for dynamic allocations
     allocator: std.mem.Allocator,
 
+    /// Arena allocator for header memory management
+    header_arena: std.heap.ArenaAllocator,
+
     /// Initialize a new response
     pub fn init(allocator: std.mem.Allocator) Response {
         return Response{
@@ -43,32 +46,17 @@ pub const Response = struct {
             .sent = false,
             .finished = false,
             .allocator = allocator,
+            .header_arena = std.heap.ArenaAllocator.init(allocator),
         };
     }
 
     /// Deinitialize the response and free resources
     pub fn deinit(self: *Response) void {
-        // Collect all headers first before freeing to avoid iterator issues
-        var keys = std.ArrayList([]const u8).init(self.allocator);
-        var values = std.ArrayList([]const u8).init(self.allocator);
-        defer keys.deinit();
-        defer values.deinit();
-        
-        // Collect all key-value pairs
-        var iterator = self.headers.iterator();
-        while (iterator.next()) |entry| {
-            keys.append(entry.key_ptr.*) catch {};
-            values.append(entry.value_ptr.*) catch {};
-        }
-        
-        // Clear and deinit the hashmap first
+        // Deinit the headers HashMap (frees its internal structure)
         self.headers.deinit();
         
-        // Now free all collected key-value pairs
-        for (keys.items, values.items) |key, value| {
-            self.allocator.free(key);
-            self.allocator.free(value);
-        }
+        // Free all header key/value memory at once via arena
+        self.header_arena.deinit();
 
         // Free body if it was allocated by us
         if (self.body_owned and self.body != null) {
@@ -78,16 +66,11 @@ pub const Response = struct {
 
     /// Reset the response for reuse in object pool
     pub fn reset(self: *Response) void {
-        // Free all header key-value pairs
-        var iterator = self.headers.iterator();
-        while (iterator.next()) |entry| {
-            // Safely free memory - these were allocated with dupe() in setHeader
-            self.allocator.free(entry.key_ptr.*);
-            self.allocator.free(entry.value_ptr.*);
-        }
+        // Clear the headers HashMap
+        self.headers.clearRetainingCapacity();
         
-        // Clear the hash map after freeing all entries
-        self.headers.clearAndFree();
+        // Reset arena allocator but retain capacity for fast reuse
+        _ = self.header_arena.reset(.retain_capacity);
 
         // Free body if it was allocated by us
         if (self.body_owned and self.body != null) {
@@ -109,24 +92,17 @@ pub const Response = struct {
 
     /// Set a header value
     pub fn setHeader(self: *Response, name: []const u8, value: []const u8) !void {
-        // Create copies of name and value to ensure they persist
-        const name_copy = try self.allocator.dupe(u8, name);
-        errdefer self.allocator.free(name_copy);
-        const value_copy = try self.allocator.dupe(u8, value);
-        errdefer self.allocator.free(value_copy);
+        // Use arena allocator for header memory
+        const arena_allocator = self.header_arena.allocator();
+        
+        // Create copies of name and value using arena allocator
+        const name_copy = try arena_allocator.dupe(u8, name);
+        const value_copy = try arena_allocator.dupe(u8, value);
 
-        // Use getEntry to check if header already exists (handles case-insensitive lookup)
+        // Check if header already exists and remove it
+        // No need to free memory - arena will handle it
         if (self.headers.getEntry(name)) |entry| {
-            // Store the old key and value to free after removal
-            const old_key = entry.key_ptr.*;
-            const old_value = entry.value_ptr.*;
-            
-            // Remove the entry using the actual key stored in the map
-            _ = self.headers.remove(old_key);
-            
-            // Free the old key and value
-            self.allocator.free(old_key);
-            self.allocator.free(old_value);
+            _ = self.headers.remove(entry.key_ptr.*);
         }
 
         // Put the new header
@@ -140,13 +116,8 @@ pub const Response = struct {
 
     /// Remove a header
     pub fn removeHeader(self: *Response, name: []const u8) bool {
-        if (self.headers.fetchRemove(name)) |removed| {
-            // Free the key and value
-            self.allocator.free(removed.key);
-            self.allocator.free(removed.value);
-            return true;
-        }
-        return false;
+        // Simply remove the header - arena will handle memory cleanup
+        return self.headers.remove(name);
     }
 
     /// Check if response has a specific header
