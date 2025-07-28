@@ -9,9 +9,15 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create app with new API
+    // Create app with new API (disable event pool to avoid memory issues)
     var app = try h3.createApp(allocator);
     defer app.deinit();
+    
+    // Disable event pool to prevent memory corruption issue
+    if (app.event_pool) |*pool| {
+        pool.deinit();
+        app.event_pool = null;
+    }
 
     // Add middleware
     _ = app.use(h3.middleware.logger);

@@ -232,7 +232,19 @@ pub const Request = struct {
 
     /// Set a header value
     pub fn setHeader(self: *Request, name: []const u8, value: []const u8) !void {
-        try self.headers.put(name, value);
+        // Check if header already exists and free old memory
+        if (self.headers.getEntry(name)) |existing| {
+            self.allocator.free(existing.key_ptr.*);
+            self.allocator.free(existing.value_ptr.*);
+            _ = self.headers.remove(name);
+        }
+        
+        // Create copies of name and value to ensure they persist
+        const name_copy = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(name_copy);
+        const value_copy = try self.allocator.dupe(u8, value);
+        
+        try self.headers.put(name_copy, value_copy);
     }
 
     /// Check if request has a specific header

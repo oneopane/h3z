@@ -38,7 +38,6 @@ pub const H3Config = struct {
     use_event_pool: bool = true,
     event_pool_size: usize = 100,
     use_fast_middleware: bool = true,
-    enable_route_compilation: bool = true,
 };
 
 /// Execute middleware at a specific index in the chain

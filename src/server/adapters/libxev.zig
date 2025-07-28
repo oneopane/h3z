@@ -271,7 +271,7 @@ pub const LibxevAdapter = struct {
 
             // Use the TCP write method
             self.write_active.store(true, .seq_cst);
-            logger.logDefault(.debug, .general, "[SUBMIT WRITE] conn_id={}, compl_ptr={}", .{ self.id, &self.write_completion });
+            logger.logDefault(.debug, .general, "[SUBMIT WRITE] conn_id={}, compl_ptr=0x{x}", .{ self.id, @intFromPtr(&self.write_completion) });
             self.tcp.write(loop, &self.write_completion, .{ .slice = self.response_buffer[0..len] }, Connection, self, onWriteCallback);
         }
 
@@ -592,7 +592,7 @@ pub const LibxevAdapter = struct {
             return .disarm;
         };
         conn.read_active.store(false, .seq_cst);
-        logger.logDefault(.debug, .general, "[CB READ] conn_id={}, compl_ptr={}", .{ conn.id, completion });
+        logger.logDefault(.debug, .general, "[CB READ] conn_id={}, compl_ptr=0x{x}", .{ conn.id, @intFromPtr(completion) });
         const bytes_read = result catch |err| {
             switch (err) {
                 error.EOF, error.ConnectionResetByPeer, error.BrokenPipe, error.ConnectionTimedOut => {
@@ -638,7 +638,7 @@ pub const LibxevAdapter = struct {
         _ = buffer;
         const conn = conn_opt orelse return .disarm;
         conn.write_active.store(false, .seq_cst);
-        logger.logDefault(.debug, .general, "[CB WRITE] conn_id={}, compl_ptr={}", .{ conn.id, completion });
+        logger.logDefault(.debug, .general, "[CB WRITE] conn_id={}, compl_ptr=0x{x}", .{ conn.id, @intFromPtr(completion) });
 
         // Check for write errors
         const bytes_written = result catch |err| {

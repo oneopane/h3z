@@ -67,14 +67,8 @@ pub const RouterConfig = struct {
     /// Cache size for route lookups
     cache_size: usize = 1000,
 
-    /// Enable Trie router for O(log n) lookups
-    enable_trie: bool = false, // Disabled by default for compatibility
-
     /// Enable compile-time route optimization
     enable_compile_time_optimization: bool = true,
-
-    /// Enable route compilation for faster matching
-    enable_route_compilation: bool = true,
 
     /// Maximum route depth for security
     max_route_depth: usize = 32,
@@ -105,13 +99,11 @@ pub const RouterConfig = struct {
         return switch (level) {
             .low => RouterConfig{
                 .enable_cache = false,
-                .enable_trie = false,
                 .cache_size = 100,
                 .matching_strategy = .linear,
             },
             .medium => RouterConfig{}, // Use defaults
             .high => RouterConfig{
-                .enable_trie = true,
                 .cache_size = 5000,
                 .matching_strategy = .hybrid,
                 .enable_compile_time_optimization = true,
@@ -283,8 +275,6 @@ pub const H3Config = struct {
             .memory = MemoryConfig.optimizeFor(.minimal),
             .router = RouterConfig{
                 .enable_cache = false,
-                .enable_trie = false,
-                .enable_route_compilation = false,
                 .matching_strategy = .linear,
             },
             .middleware = MiddlewareConfig{
