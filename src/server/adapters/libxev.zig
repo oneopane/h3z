@@ -489,6 +489,17 @@ pub const LibxevAdapter = struct {
         };
     }
 
+    /// Create a streaming connection for SSE
+    pub fn createConnection(self: *Self, tcp: xev.TCP) !*@import("../connection.zig").Connection {
+        if (self.loop) |loop| {
+            const libxev_conn = try LibxevConnection.init(self.allocator, tcp, loop);
+            const conn = try self.allocator.create(@import("../connection.zig").Connection);
+            conn.* = .{ .libxev = libxev_conn };
+            return conn;
+        }
+        return error.LoopNotInitialized;
+    }
+
     /// Start accepting new connections
     fn startAccept(self: *Self) void {
         if (self.server_tcp) |*server| {
@@ -702,6 +713,174 @@ pub const LibxevAdapter = struct {
         logger.logDefault(.debug, .connection, "[Connection Close] Connection memory freed", .{});
 
         return .disarm;
+    }
+};
+
+/// LibxevConnection for SSE and streaming support
+/// Wraps a Connection with additional streaming capabilities
+pub const LibxevConnection = struct {
+    /// The underlying TCP connection
+    tcp: xev.TCP,
+    /// Write queue for buffering data during async operations
+    write_queue: std.ArrayList([]const u8),
+    /// Active write completion for tracking async writes
+    write_completion: xev.Completion,
+    /// Whether the connection is in streaming mode (e.g., SSE)
+    streaming_mode: bool = false,
+    /// Whether the connection has been closed
+    closed: bool = false,
+    /// Reference to the event loop
+    loop: *xev.Loop,
+    /// Allocator for memory management
+    allocator: std.mem.Allocator,
+    /// Whether a write is currently in progress
+    write_in_progress: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    /// Total bytes queued (for backpressure detection)
+    bytes_queued: usize = 0,
+
+    const MAX_QUEUE_SIZE = 64 * 1024; // 64KB max queue size for backpressure
+
+    /// Initialize a new LibxevConnection
+    pub fn init(allocator: std.mem.Allocator, tcp: xev.TCP, loop: *xev.Loop) !*LibxevConnection {
+        const conn = try allocator.create(LibxevConnection);
+        conn.* = LibxevConnection{
+            .tcp = tcp,
+            .write_queue = std.ArrayList([]const u8).init(allocator),
+            .write_completion = undefined,
+            .loop = loop,
+            .allocator = allocator,
+        };
+        return conn;
+    }
+
+    /// Clean up the connection
+    pub fn deinit(self: *LibxevConnection) void {
+        // Free all queued writes
+        for (self.write_queue.items) |data| {
+            self.allocator.free(data);
+        }
+        self.write_queue.deinit();
+    }
+
+    /// Write a chunk of data without closing the connection
+    pub fn writeChunk(self: *LibxevConnection, data: []const u8) !void {
+        if (self.closed) return error.ConnectionClosed;
+        if (!self.streaming_mode) return error.NotStreamingMode;
+
+        // Check for backpressure
+        if (self.bytes_queued + data.len > MAX_QUEUE_SIZE) {
+            return error.BufferFull;
+        }
+
+        // Copy data to owned memory
+        const data_copy = try self.allocator.alloc(u8, data.len);
+        @memcpy(data_copy, data);
+
+        // Queue the data
+        try self.write_queue.append(data_copy);
+        self.bytes_queued += data.len;
+
+        // If no write is in progress, start one
+        if (!self.write_in_progress.swap(true, .seq_cst)) {
+            self.processWriteQueue();
+        }
+    }
+
+    /// Process queued writes
+    fn processWriteQueue(self: *LibxevConnection) void {
+        if (self.write_queue.items.len == 0) {
+            self.write_in_progress.store(false, .seq_cst);
+            return;
+        }
+
+        // Get the next chunk to write
+        const data = self.write_queue.items[0];
+        
+        // Start async write
+        self.tcp.write(self.loop, &self.write_completion, .{ .slice = data }, LibxevConnection, self, onWriteComplete);
+    }
+
+    /// Handle write completion
+    fn onWriteComplete(
+        conn_opt: ?*LibxevConnection,
+        loop: *xev.Loop,
+        completion: *xev.Completion,
+        tcp: xev.TCP,
+        buffer: xev.WriteBuffer,
+        result: xev.WriteError!usize,
+    ) xev.CallbackAction {
+        _ = loop;
+        _ = completion;
+        _ = tcp;
+        _ = buffer;
+
+        const conn = conn_opt orelse return .disarm;
+
+        // Check for write errors
+        const bytes_written = result catch |err| {
+            logger.logDefault(.err, .connection, "SSE write failed: {}", .{err});
+            conn.closed = true;
+            conn.write_in_progress.store(false, .seq_cst);
+            return .disarm;
+        };
+
+        // Remove the written data from queue
+        if (conn.write_queue.items.len > 0) {
+            const written_data = conn.write_queue.orderedRemove(0);
+            conn.allocator.free(written_data);
+            conn.bytes_queued -= bytes_written;
+        }
+
+        // Process next item in queue
+        conn.processWriteQueue();
+
+        return .disarm;
+    }
+
+    /// Flush any buffered data immediately
+    pub fn flush(self: *LibxevConnection) !void {
+        if (self.closed) return error.ConnectionClosed;
+        // In libxev, writes are already async, so this is a no-op
+        // The write queue is continuously processed
+    }
+
+    /// Close the connection
+    pub fn close(self: *LibxevConnection) void {
+        if (!self.closed) {
+            self.closed = true;
+            self.tcp.close(self.loop, &self.write_completion, LibxevConnection, self, onCloseComplete);
+        }
+    }
+
+    /// Handle close completion
+    fn onCloseComplete(
+        conn_opt: ?*LibxevConnection,
+        loop: *xev.Loop,
+        completion: *xev.Completion,
+        tcp: xev.TCP,
+        result: xev.CloseError!void,
+    ) xev.CallbackAction {
+        _ = loop;
+        _ = completion;
+        _ = tcp;
+        _ = result;
+
+        if (conn_opt) |conn| {
+            conn.deinit();
+            conn.allocator.destroy(conn);
+        }
+
+        return .disarm;
+    }
+
+    /// Check if the connection is still alive
+    pub fn isAlive(self: *LibxevConnection) bool {
+        return !self.closed;
+    }
+
+    /// Enable streaming mode for this connection
+    pub fn enableStreamingMode(self: *LibxevConnection) void {
+        self.streaming_mode = true;
     }
 };
 

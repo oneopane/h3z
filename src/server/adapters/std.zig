@@ -320,6 +320,115 @@ pub const StdAdapter = struct {
         const response_data = fbs.getWritten();
         try stream.writeAll(response_data);
     }
+
+    /// Create a streaming connection for SSE
+    pub fn createConnection(self: *Self, stream: std.net.Stream) !*@import("../connection.zig").Connection {
+        const std_conn = try StdConnection.init(self.allocator, stream);
+        const conn = try self.allocator.create(@import("../connection.zig").Connection);
+        conn.* = .{ .std = std_conn };
+        return conn;
+    }
+};
+
+/// StdConnection for SSE and streaming support
+/// Wraps a standard library Stream with streaming capabilities
+pub const StdConnection = struct {
+    /// The underlying network stream
+    stream: std.net.Stream,
+    /// Write buffer for batching small writes
+    write_buffer: [8192]u8,
+    /// Current buffer position
+    buffer_len: usize = 0,
+    /// Whether the connection is in streaming mode (e.g., SSE)
+    streaming_mode: bool = false,
+    /// Whether the connection has been closed
+    closed: bool = false,
+    /// Allocator for memory management
+    allocator: std.mem.Allocator,
+
+    /// Initialize a new StdConnection
+    pub fn init(allocator: std.mem.Allocator, stream: std.net.Stream) !*StdConnection {
+        const conn = try allocator.create(StdConnection);
+        conn.* = StdConnection{
+            .stream = stream,
+            .write_buffer = undefined,
+            .allocator = allocator,
+        };
+        return conn;
+    }
+
+    /// Clean up the connection
+    pub fn deinit(self: *StdConnection) void {
+        // Nothing to clean up for basic connection
+        _ = self;
+    }
+
+    /// Write a chunk of data without closing the connection
+    pub fn writeChunk(self: *StdConnection, data: []const u8) !void {
+        if (self.closed) return error.ConnectionClosed;
+        if (!self.streaming_mode) return error.NotStreamingMode;
+
+        // For small writes, buffer them
+        if (data.len < 1024 and self.buffer_len + data.len <= self.write_buffer.len) {
+            @memcpy(self.write_buffer[self.buffer_len..][0..data.len], data);
+            self.buffer_len += data.len;
+            return;
+        }
+
+        // Flush existing buffer if needed
+        if (self.buffer_len > 0) {
+            try self.flush();
+        }
+
+        // Write large chunks directly
+        self.stream.writeAll(data) catch |err| switch (err) {
+            error.BrokenPipe, error.ConnectionResetByPeer => {
+                self.closed = true;
+                return error.ConnectionClosed;
+            },
+            else => return error.WriteError,
+        };
+    }
+
+    /// Flush any buffered data immediately
+    pub fn flush(self: *StdConnection) !void {
+        if (self.closed) return error.ConnectionClosed;
+        
+        if (self.buffer_len > 0) {
+            self.stream.writeAll(self.write_buffer[0..self.buffer_len]) catch |err| switch (err) {
+                error.BrokenPipe, error.ConnectionResetByPeer => {
+                    self.closed = true;
+                    return error.ConnectionClosed;
+                },
+                else => return error.WriteError,
+            };
+            self.buffer_len = 0;
+        }
+    }
+
+    /// Close the connection
+    pub fn close(self: *StdConnection) void {
+        if (!self.closed) {
+            self.closed = true;
+            // Flush any remaining data before closing
+            self.flush() catch {};
+            self.stream.close();
+            
+            // Clean up and free memory
+            self.deinit();
+            self.allocator.destroy(self);
+        }
+    }
+
+    /// Check if the connection is still alive
+    pub fn isAlive(self: *StdConnection) bool {
+        return !self.closed;
+    }
+
+    /// Enable streaming mode for this connection
+    pub fn enableStreamingMode(self: *StdConnection) void {
+        self.streaming_mode = true;
+    }
 };
 
 /// Connection job for thread pool
