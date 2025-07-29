@@ -1,0 +1,233 @@
+info: SSE Counter example starting on http://localhost:3000
+info: Visit http://localhost:3000 to see the counter
+debug: libxev components initialized successfully
+debug: New connection accepted
+debug: [Connection Created] Client port: 0, connection created, total connections: 1
+debug: [SUBMIT READ] conn_id=0
+debug: Connection established, total connections: 1
+debug: [CB READ] conn_id=0, compl_ptr=0x1052e0108
+debug: Received 83 bytes from connection
+debug: SSE mode detected, setting up streaming connection
+debug: [SSE] writeChunk called: 124 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 124 bytes, total queued: 124, queue size: 1
+debug: [SSE] Data preview: HTTP/1.1 200 OK
+Cache-Control: no-cache
+X-Accel-Buffering: no
+Content-Type: text/event-stream
+Co
+debug: [SSE] processWriteQueue: queue size=1, bytes_queued=124
+debug: [SSE] Writing chunk: 124 bytes
+debug: SSE headers sent through streaming connection, 124 bytes
+debug: SSE callback scheduled for execution
+debug: Executing SSE streaming callback
+info: SSE counter streaming started
+debug: [SSE] sendEvent called, closed=false, event_count=0
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 0
+data: 0
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 154, queue size: 2
+debug: [SSE] Data preview: event: counter
+id: 0
+data: 0
+
+
+debug: [SSE] Event sent successfully, total events: 1
+debug: [SSE] sendEvent called, closed=false, event_count=1
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 1
+data: 1
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 184, queue size: 3
+debug: [SSE] Data preview: event: counter
+id: 1
+data: 1
+
+
+debug: [SSE] Event sent successfully, total events: 2
+debug: [SSE] sendEvent called, closed=false, event_count=2
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 2
+data: 2
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 214, queue size: 4
+debug: [SSE] Data preview: event: counter
+id: 2
+data: 2
+
+
+debug: [SSE] Event sent successfully, total events: 3
+debug: [SSE] sendEvent called, closed=false, event_count=3
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 3
+data: 3
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 244, queue size: 5
+debug: [SSE] Data preview: event: counter
+id: 3
+data: 3
+
+
+debug: [SSE] Event sent successfully, total events: 4
+debug: [SSE] sendEvent called, closed=false, event_count=4
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 4
+data: 4
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 274, queue size: 6
+debug: [SSE] Data preview: event: counter
+id: 4
+data: 4
+
+
+debug: [SSE] Event sent successfully, total events: 5
+debug: [SSE] sendEvent called, closed=false, event_count=5
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 5
+data: 5
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 304, queue size: 7
+debug: [SSE] Data preview: event: counter
+id: 5
+data: 5
+
+
+debug: [SSE] Event sent successfully, total events: 6
+debug: [SSE] sendEvent called, closed=false, event_count=6
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 6
+data: 6
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 334, queue size: 8
+debug: [SSE] Data preview: event: counter
+id: 6
+data: 6
+
+
+debug: [SSE] Event sent successfully, total events: 7
+debug: [SSE] sendEvent called, closed=false, event_count=7
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 7
+data: 7
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 364, queue size: 9
+debug: [SSE] Data preview: event: counter
+id: 7
+data: 7
+
+
+debug: [SSE] Event sent successfully, total events: 8
+debug: [SSE] sendEvent called, closed=false, event_count=8
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 8
+data: 8
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 394, queue size: 10
+debug: [SSE] Data preview: event: counter
+id: 8
+data: 8
+
+
+debug: [SSE] Event sent successfully, total events: 9
+debug: [SSE] sendEvent called, closed=false, event_count=9
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 9
+data: 9
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 424, queue size: 11
+debug: [SSE] Data preview: event: counter
+id: 9
+data: 9
+
+
+debug: [SSE] Event sent successfully, total events: 10
+debug: [SSE] sendEvent called, closed=false, event_count=10
+debug: [SSE] Formatted event: 32 bytes, preview: event: counter
+id: 10
+data: 10
+
+
+debug: [SSE] writeChunk called: 32 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 32 bytes, total queued: 456, queue size: 12
+debug: [SSE] Data preview: event: counter
+id: 10
+data: 10
+
+
+debug: [SSE] Event sent successfully, total events: 11
+debug: [SSE] sendEvent called, closed=false, event_count=11
+debug: [SSE] Formatted event: 32 bytes, preview: event: counter
+id: 11
+data: 11
+
+
+debug: [SSE] writeChunk called: 32 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 32 bytes, total queued: 488, queue size: 13
+debug: [SSE] Data preview: event: counter
+id: 11
+data: 11
+
+
+debug: [SSE] Event sent successfully, total events: 12
+debug: [SSE] sendEvent called, closed=false, event_count=12
+debug: [SSE] Formatted event: 32 bytes, preview: event: counter
+id: 12
+data: 12
+
+
+debug: [SSE] writeChunk called: 32 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 32 bytes, total queued: 520, queue size: 14
+debug: [SSE] Data preview: event: counter
+id: 12
+data: 12
+
+
+debug: [SSE] Event sent successfully, total events: 13
+debug: [SSE] sendEvent called, closed=false, event_count=13
+debug: [SSE] Formatted event: 32 bytes, preview: event: counter
+id: 13
+data: 13
+
+
+debug: [SSE] writeChunk called: 32 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 32 bytes, total queued: 552, queue size: 15
+debug: [SSE] Data preview: event: counter
+id: 13
+data: 13
+
+
+debug: [SSE] Event sent successfully, total events: 14
+debug: [SSE] sendEvent called, closed=false, event_count=14
+debug: [SSE] Formatted event: 32 bytes, preview: event: counter
+id: 14
+data: 14
+
+
+debug: [SSE] writeChunk called: 32 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 32 bytes, total queued: 584, queue size: 16
+debug: [SSE] Data preview: event: counter
+id: 14
+data: 14
+
+
+debug: [SSE] Event sent successfully, total events: 15

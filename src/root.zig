@@ -34,6 +34,7 @@ const std = @import("std");
 pub const App = @import("core/app.zig").H3;
 pub const H3 = @import("core/app.zig").H3; // Alias for App
 pub const Event = @import("core/event.zig").H3Event;
+pub const H3Event = @import("core/event.zig").H3Event; // Modern export
 pub const Handler = @import("core/handler.zig").Handler;
 pub const ContextHandler = @import("core/handler.zig").ContextHandler;
 pub const HandlerRegistry = @import("core/handler.zig").HandlerRegistry;
@@ -79,6 +80,12 @@ pub const Request = @import("http/request.zig").Request;
 pub const Response = @import("http/response.zig").Response;
 pub const Headers = @import("http/headers.zig").Headers;
 
+// Re-export SSE types
+pub const SSEEvent = @import("http/sse.zig").SSEEvent;
+pub const SSEWriter = @import("http/sse.zig").SSEWriter;
+pub const SSEError = @import("http/sse.zig").SSEError;
+pub const SSEConnection = @import("server/sse_connection.zig").SSEConnection;
+
 // Re-export server functions
 pub const serve = @import("server/serve.zig").serve;
 pub const ServeOptions = @import("server/serve.zig").ServeOptions;
@@ -112,6 +119,8 @@ pub const server = struct {
         pub const libxev = @import("server/adapters/libxev.zig");
     };
 };
+
+pub const xev = @import("xev");
 
 // Convenience functions for better API
 /// Create a new H3 application with default configuration

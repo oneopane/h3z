@@ -4,7 +4,7 @@
 const std = @import("std");
 const xev = @import("xev");
 
-const H3App = @import("../../core/app.zig").H3;
+const H3App = @import("../../core/app.zig").H3App;
 const H3Event = @import("../../core/event.zig").H3Event;
 const HttpMethod = @import("../../http/method.zig").HttpMethod;
 const ServeOptions = @import("../config.zig").ServeOptions;
@@ -95,11 +95,8 @@ pub const LibxevAdapter = struct {
             var event: *H3Event = undefined;
             var use_pool = false;
 
-            if (self.adapter.app.event_pool) |*pool| {
-                // Attempt to acquire event from pool
-                event = try pool.acquire();
-                use_pool = true;
-            } else {
+            // Try to acquire event from memory manager's event pool
+            event = self.adapter.app.memory_manager.acquireEvent() catch blk: {
                 // Limit total connections even without pool
                 if (self.adapter.connections.items.len > 1000) {
                     logger.logDefault(.warn, .connection, "[Connection Limit] Maximum connection limit reached (1000), rejecting new request", .{});
@@ -107,13 +104,15 @@ pub const LibxevAdapter = struct {
                 }
                 const new_event = try self.context.allocator.create(H3Event);
                 new_event.* = H3Event.init(self.context.allocator);
-                event = new_event;
-                use_pool = false;
-            }
+                break :blk new_event;
+            };
+            
+            // Set use_pool flag based on memory manager's pool availability
+            use_pool = self.adapter.app.memory_manager.event_pool != null;
 
             defer {
-                if (use_pool and self.adapter.app.event_pool != null) {
-                    self.adapter.app.event_pool.?.release(event);
+                if (use_pool) {
+                    self.adapter.app.memory_manager.releaseEvent(event);
                 } else {
                     event.deinit();
                     self.context.allocator.destroy(event);
@@ -135,6 +134,42 @@ pub const LibxevAdapter = struct {
                 event.setStatus(.internal_server_error);
                 try event.sendText("Internal Server Error");
             };
+
+            // Check if this request started SSE mode
+            if (event.sse_started) {
+                logger.logDefault(.debug, .connection, "SSE mode detected, setting up streaming connection", .{});
+                
+                // Create streaming connection if not already created
+                const stream_conn = try self.createStreamingConnection(loop);
+                
+                // Convert to SSEConnection and link to event
+                const sse_conn = try self.allocator.create(@import("../sse_connection.zig").SSEConnection);
+                sse_conn.* = stream_conn.toSSEConnection();
+                event.sse_connection = sse_conn;
+                
+                // Send SSE headers immediately
+                try self.sendSSEHeaders(loop, event);
+                
+                // Check for streaming handlers (new typed system) or legacy callback
+                if (event.sse_typed_handler) |typed_handler| {
+                    // Create SSE writer
+                    const writer = try event.allocator.create(@import("../../http/sse.zig").SSEWriter);
+                    writer.* = @import("../../http/sse.zig").SSEWriter.init(event.allocator, sse_conn);
+                    
+                    // Schedule typed handler execution
+                    try self.scheduleTypedSSEHandler(loop, typed_handler, event.sse_handler_type, writer, event.allocator);
+                } else if (event.sse_callback) |callback| {
+                    // Legacy callback support
+                    const writer = try event.allocator.create(@import("../../http/sse.zig").SSEWriter);
+                    writer.* = @import("../../http/sse.zig").SSEWriter.init(event.allocator, sse_conn);
+                    
+                    // Schedule callback execution
+                    try self.scheduleSSECallback(loop, callback, writer, event.allocator);
+                }
+                
+                // Skip normal response flow for SSE
+                return;
+            }
 
             // Check if Keep-Alive is supported
             const connection_header = event.request.headers.get("Connection") orelse "";
@@ -343,7 +378,169 @@ pub const LibxevAdapter = struct {
             
             return conn;
         }
+
+        /// Send SSE headers without body
+        fn sendSSEHeaders(self: *Connection, loop: *xev.Loop, event: *H3Event) !void {
+            var buffer: [1024]u8 = undefined;
+            var fbs = std.io.fixedBufferStream(&buffer);
+            const writer = fbs.writer();
+            
+            // Status line
+            try writer.print("HTTP/{s} 200 OK\r\n", .{event.response.version});
+            
+            // Headers
+            var header_iter = event.response.headers.iterator();
+            while (header_iter.next()) |entry| {
+                try writer.print("{s}: {s}\r\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+            }
+            
+            // Empty line to end headers
+            try writer.writeAll("\r\n");
+            
+            // Send immediately
+            const response_data = fbs.getWritten();
+            
+            // Send headers through the streaming connection instead of regular connection
+            if (self.streaming_connection) |stream_conn| {
+                try stream_conn.writeChunk(response_data);
+                logger.logDefault(.debug, .connection, "SSE headers sent through streaming connection, {} bytes", .{response_data.len});
+            } else {
+                // Fallback to regular send
+                self.sendResponse(loop, response_data);
+                logger.logDefault(.debug, .connection, "SSE headers sent through regular connection, {} bytes", .{response_data.len});
+            }
+        }
+
+        /// Schedule SSE callback for execution - updated for typed handler system
+        fn scheduleSSECallback(
+            self: *Connection,
+            loop: *xev.Loop,
+            callback: @import("../../core/event.zig").SSEStreamCallback,
+            writer: *@import("../../http/sse.zig").SSEWriter,
+            allocator: std.mem.Allocator,
+        ) !void {
+            _ = self; // Unused but kept for consistency
+            // Create a task for the legacy callback
+            const task = try allocator.create(SSECallbackTask);
+            task.* = .{
+                .callback = callback,
+                .typed_handler = null, // No typed handler for legacy callback
+                .handler_type = .stream, // Default to stream for legacy
+                .writer = writer,
+                .loop = loop,
+                .allocator = allocator,
+            };
+            
+            // Create a timer that fires immediately (0 ms)
+            const timer = try xev.Timer.init();
+            
+            // Schedule for immediate execution
+            const completion = try allocator.create(xev.Completion);
+            timer.run(loop, completion, 0, SSECallbackTask, task, executeSSECallback);
+            logger.logDefault(.debug, .connection, "SSE callback scheduled for execution", .{});
+        }
+        
+        /// Schedule typed SSE handler for execution
+        fn scheduleTypedSSEHandler(
+            self: *Connection,
+            loop: *xev.Loop,
+            typed_handler: @import("../../core/handler.zig").TypedHandler,
+            handler_type: @import("../../core/handler.zig").HandlerType,
+            writer: *@import("../../http/sse.zig").SSEWriter,
+            allocator: std.mem.Allocator,
+        ) !void {
+            _ = self; // Unused but kept for consistency
+            // Create a task for the typed handler
+            const task = try allocator.create(SSECallbackTask);
+            
+            // Create a dummy callback for compatibility
+            const dummy_callback = struct {
+                fn callback(w: *@import("../../http/sse.zig").SSEWriter) !void {
+                    _ = w;
+                    // This should never be called when typed_handler is set
+                }
+            }.callback;
+            
+            task.* = .{
+                .callback = dummy_callback,
+                .typed_handler = typed_handler,
+                .handler_type = handler_type,
+                .writer = writer,
+                .loop = loop,
+                .allocator = allocator,
+            };
+            
+            // Create a timer that fires immediately (0 ms)
+            const timer = try xev.Timer.init();
+            
+            // Schedule for immediate execution
+            const completion = try allocator.create(xev.Completion);
+            timer.run(loop, completion, 0, SSECallbackTask, task, executeSSECallback);
+            logger.logDefault(.debug, .connection, "Typed SSE handler scheduled for execution, type: {}", .{handler_type});
+        }
     };
+
+    /// Task structure for SSE callbacks - updated for typed handler system
+    const SSECallbackTask = struct {
+        callback: @import("../../core/event.zig").SSEStreamCallback, // Legacy callback
+        typed_handler: ?@import("../../core/handler.zig").TypedHandler = null, // New typed handler
+        handler_type: @import("../../core/handler.zig").HandlerType = .stream, // Handler type for dispatch
+        writer: *@import("../../http/sse.zig").SSEWriter,
+        loop: *xev.Loop, // Add loop reference for stream_with_loop handlers
+        allocator: std.mem.Allocator,
+    };
+
+    /// Execute the SSE callback - updated for typed handler system
+    fn executeSSECallback(
+        userdata: ?*SSECallbackTask,
+        loop: *xev.Loop,
+        c: *xev.Completion,
+        result: xev.Timer.RunError!void,
+    ) xev.CallbackAction {
+        // Handle timer errors
+        _ = result catch |err| {
+            logger.logDefault(.err, .connection, "Timer error in SSE callback: {}", .{err});
+            return .disarm;
+        };
+        
+        const task = userdata.?;
+        const allocator = task.allocator;
+        defer allocator.destroy(task);
+        defer allocator.destroy(c);
+        
+        // Execute the handler based on type
+        logger.logDefault(.debug, .connection, "Executing SSE streaming callback, handler type: {}", .{task.handler_type});
+        
+        // Use typed handler if available, otherwise fall back to legacy callback
+        if (task.typed_handler) |typed_handler| {
+            switch (typed_handler) {
+                .stream => |handler_fn| {
+                    handler_fn(task.writer) catch |err| {
+                        logger.logDefault(.err, .connection, "SSE stream handler error: {}", .{err});
+                        task.writer.close();
+                    };
+                },
+                .stream_with_loop => |handler_fn| {
+                    handler_fn(task.writer, loop) catch |err| {
+                        logger.logDefault(.err, .connection, "SSE stream_with_loop handler error: {}", .{err});
+                        task.writer.close();
+                    };
+                },
+                .regular => {
+                    logger.logDefault(.err, .connection, "Regular handler cannot be used for SSE streaming", .{});
+                    task.writer.close();
+                },
+            }
+        } else {
+            // Legacy callback support
+            task.callback(task.writer) catch |err| {
+                logger.logDefault(.err, .connection, "SSE streaming callback error: {}", .{err});
+                task.writer.close();
+            };
+        }
+        
+        return .disarm;
+    }
 
     /// Initialize the adapter
     pub fn init(allocator: std.mem.Allocator, app: *H3App) Self {
@@ -798,11 +995,14 @@ pub const LibxevConnection = struct {
 
     /// Write a chunk of data without closing the connection
     pub fn writeChunk(self: *LibxevConnection, data: []const u8) @import("../sse_connection.zig").SSEConnectionError!void {
+        logger.logDefault(.debug, .connection, "[SSE] writeChunk called: {} bytes, closed={}, streaming={}", .{ data.len, self.closed, self.streaming_mode });
+        
         if (self.closed) return error.ConnectionClosed;
         if (!self.streaming_mode) return error.NotStreamingMode;
 
         // Check for backpressure
         if (self.bytes_queued + data.len > MAX_QUEUE_SIZE) {
+            logger.logDefault(.warn, .connection, "[SSE] Buffer full: queued={}, trying to add={}, max={}", .{ self.bytes_queued, data.len, MAX_QUEUE_SIZE });
             return error.BufferFull;
         }
 
@@ -817,6 +1017,12 @@ pub const LibxevConnection = struct {
         };
         self.bytes_queued += data.len;
 
+        logger.logDefault(.debug, .connection, "[SSE] Data queued: {} bytes, total queued: {}, queue size: {}", .{ data.len, self.bytes_queued, self.write_queue.items.len });
+        
+        // Log the first 100 bytes of the data
+        const preview_len = @min(data.len, 100);
+        logger.logDefault(.debug, .connection, "[SSE] Data preview: {s}", .{data[0..preview_len]});
+
         // If no write is in progress, start one
         if (!self.write_in_progress.swap(true, .seq_cst)) {
             self.processWriteQueue();
@@ -825,16 +1031,37 @@ pub const LibxevConnection = struct {
 
     /// Process queued writes
     fn processWriteQueue(self: *LibxevConnection) void {
+        logger.logDefault(.debug, .connection, "[SSE] processWriteQueue: queue size={}, bytes_queued={}, closed={}", .{ self.write_queue.items.len, self.bytes_queued, self.closed });
+        
         if (self.write_queue.items.len == 0) {
+            logger.logDefault(.debug, .connection, "[SSE] Write queue empty, marking write_in_progress=false", .{});
             self.write_in_progress.store(false, .seq_cst);
+            
+            // If we're marked for closing and queue is empty, close now
+            if (self.closed) {
+                logger.logDefault(.debug, .connection, "[SSE] Queue drained, closing connection", .{});
+                const completion = self.allocator.create(xev.Completion) catch {
+                    logger.logDefault(.err, .connection, "[SSE] Failed to allocate close completion", .{});
+                    return;
+                };
+                self.tcp.close(self.loop, completion, LibxevConnection, self, onCloseComplete);
+            }
             return;
         }
 
         // Get the next chunk to write
         const data = self.write_queue.items[0];
+        logger.logDefault(.debug, .connection, "[SSE] Writing chunk: {} bytes", .{data.len});
+        
+        // Allocate a new completion for this write
+        const completion = self.allocator.create(xev.Completion) catch {
+            logger.logDefault(.err, .connection, "[SSE] Failed to allocate completion", .{});
+            self.write_in_progress.store(false, .seq_cst);
+            return;
+        };
         
         // Start async write
-        self.tcp.write(self.loop, &self.write_completion, .{ .slice = data }, LibxevConnection, self, onWriteComplete);
+        self.tcp.write(self.loop, completion, .{ .slice = data }, LibxevConnection, self, onWriteComplete);
     }
 
     /// Handle write completion
@@ -847,25 +1074,31 @@ pub const LibxevConnection = struct {
         result: xev.WriteError!usize,
     ) xev.CallbackAction {
         _ = loop;
-        _ = completion;
         _ = tcp;
         _ = buffer;
 
         const conn = conn_opt orelse return .disarm;
+        
+        // Free the completion object
+        defer conn.allocator.destroy(completion);
 
         // Check for write errors
         const bytes_written = result catch |err| {
+            logger.logDefault(.err, .connection, "[SSE] Write error: {}", .{err});
             logger.logDefault(.err, .connection, "SSE write failed: {}", .{err});
             conn.closed = true;
             conn.write_in_progress.store(false, .seq_cst);
             return .disarm;
         };
 
+        logger.logDefault(.debug, .connection, "[SSE] Write complete: {} bytes written", .{bytes_written});
+        
         // Remove the written data from queue
         if (conn.write_queue.items.len > 0) {
             const written_data = conn.write_queue.orderedRemove(0);
             conn.allocator.free(written_data);
             conn.bytes_queued -= bytes_written;
+            logger.logDefault(.debug, .connection, "[SSE] Removed from queue, remaining: {} items, {} bytes", .{ conn.write_queue.items.len, conn.bytes_queued });
         }
 
         // Process next item in queue
@@ -885,7 +1118,20 @@ pub const LibxevConnection = struct {
     pub fn close(self: *LibxevConnection) void {
         if (!self.closed) {
             self.closed = true;
-            self.tcp.close(self.loop, &self.write_completion, LibxevConnection, self, onCloseComplete);
+            
+            // If there's data in the write queue, mark for closing after queue drains
+            if (self.write_queue.items.len > 0 or self.write_in_progress.load(.seq_cst)) {
+                logger.logDefault(.debug, .connection, "[SSE] Delaying close until write queue drains: {} items pending", .{self.write_queue.items.len});
+                // The connection will be closed when the queue is empty
+                return;
+            }
+            
+            // No pending writes, close immediately
+            const completion = self.allocator.create(xev.Completion) catch {
+                logger.logDefault(.err, .connection, "[SSE] Failed to allocate close completion", .{});
+                return;
+            };
+            self.tcp.close(self.loop, completion, LibxevConnection, self, onCloseComplete);
         }
     }
 
@@ -898,11 +1144,13 @@ pub const LibxevConnection = struct {
         result: xev.CloseError!void,
     ) xev.CallbackAction {
         _ = loop;
-        _ = completion;
         _ = tcp;
-        _ = result;
+        result catch {};
 
         if (conn_opt) |conn| {
+            // Free the completion object
+            conn.allocator.destroy(completion);
+            
             conn.deinit();
             conn.allocator.destroy(conn);
         }
@@ -918,6 +1166,11 @@ pub const LibxevConnection = struct {
     /// Enable streaming mode for this connection
     pub fn enableStreamingMode(self: *LibxevConnection) void {
         self.streaming_mode = true;
+    }
+
+    /// Convert to SSEConnection tagged union
+    pub fn toSSEConnection(self: *LibxevConnection) @import("../sse_connection.zig").SSEConnection {
+        return @import("../sse_connection.zig").SSEConnection{ .libxev = self };
     }
 };
 

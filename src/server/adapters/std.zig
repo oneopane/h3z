@@ -2,7 +2,7 @@
 //! Provides synchronous I/O using Zig's standard library
 
 const std = @import("std");
-const H3App = @import("../../core/app.zig").H3;
+const H3App = @import("../../core/app.zig").H3App;
 const H3Event = @import("../../core/event.zig").H3Event;
 const HttpMethod = @import("../../http/method.zig").HttpMethod;
 const ServeOptions = @import("../config.zig").ServeOptions;
@@ -209,6 +209,26 @@ pub const StdAdapter = struct {
             try event.sendText("Internal Server Error");
         };
 
+        // Check if this request started SSE mode
+        if (event.sse_started) {
+            std.log.info("SSE mode detected, setting up streaming connection", .{});
+            
+            // Create SSE connection
+            const sse_conn = try StdConnection.init(self.allocator, stream);
+            sse_conn.enableStreamingMode();
+            
+            // Convert to SSEConnection and link to event
+            const conn_ptr = try self.allocator.create(@import("../sse_connection.zig").SSEConnection);
+            conn_ptr.* = sse_conn.toSSEConnection();
+            event.sse_connection = conn_ptr;
+            
+            // Send headers immediately
+            try self.sendSSEHeaders(stream, &event);
+            
+            // Return with keep-alive to prevent connection close
+            return ProcessResult.keep_alive;
+        }
+
         // Send response
         try self.sendHttpResponse(stream, &event, options);
 
@@ -321,6 +341,33 @@ pub const StdAdapter = struct {
         try stream.writeAll(response_data);
     }
 
+    /// Send SSE headers without body
+    fn sendSSEHeaders(self: *Self, stream: std.net.Stream, event: *H3Event) !void {
+        _ = self;
+        
+        var buffer: [1024]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buffer);
+        const writer = fbs.writer();
+        
+        // Status line
+        try writer.print("HTTP/{s} 200 OK\r\n", .{event.response.version});
+        
+        // Headers
+        var header_iter = event.response.headers.iterator();
+        while (header_iter.next()) |entry| {
+            try writer.print("{s}: {s}\r\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+        }
+        
+        // Empty line to end headers
+        try writer.writeAll("\r\n");
+        
+        // Send immediately
+        const response_data = fbs.getWritten();
+        try stream.writeAll(response_data);
+        
+        std.log.info("SSE headers sent, {} bytes", .{response_data.len});
+    }
+
     /// Create a streaming connection for SSE
     pub fn createConnection(self: *Self, stream: std.net.Stream) !*@import("../sse_connection.zig").SSEConnection {
         const std_conn = try StdConnection.init(self.allocator, stream);
@@ -428,6 +475,11 @@ pub const StdConnection = struct {
     /// Enable streaming mode for this connection
     pub fn enableStreamingMode(self: *StdConnection) void {
         self.streaming_mode = true;
+    }
+
+    /// Convert to SSEConnection tagged union
+    pub fn toSSEConnection(self: *StdConnection) @import("../sse_connection.zig").SSEConnection {
+        return @import("../sse_connection.zig").SSEConnection{ .std = self };
     }
 };
 

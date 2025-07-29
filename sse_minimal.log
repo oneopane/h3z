@@ -1,0 +1,47 @@
+info: Minimal SSE example starting on http://localhost:3000
+debug: libxev components initialized successfully
+debug: New connection accepted
+debug: [Connection Created] Client port: 0, connection created, total connections: 1
+debug: [SUBMIT READ] conn_id=0
+debug: Connection established, total connections: 1
+debug: [CB READ] conn_id=0, compl_ptr=0x1030a0108
+debug: Received 83 bytes from connection
+debug: SSE mode detected, setting up streaming connection
+debug: [SSE] writeChunk called: 124 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 124 bytes, total queued: 124, queue size: 1
+debug: [SSE] Data preview: HTTP/1.1 200 OK
+Cache-Control: no-cache
+X-Accel-Buffering: no
+Content-Type: text/event-stream
+Co
+debug: [SSE] processWriteQueue: queue size=1, bytes_queued=124
+debug: [SSE] Writing chunk: 124 bytes
+debug: SSE headers sent through streaming connection, 124 bytes
+debug: SSE callback scheduled for execution
+debug: Executing SSE streaming callback
+info: SSE minimal streaming started
+debug: [SSE] sendEvent called, closed=false, event_count=0
+debug: [SSE] Formatted event: 41 bytes, preview: event: test
+id: 1
+data: Hello from SSE!
+
+
+debug: [SSE] writeChunk called: 41 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 41 bytes, total queued: 165, queue size: 2
+debug: [SSE] Data preview: event: test
+id: 1
+data: Hello from SSE!
+
+
+debug: [SSE] Event sent successfully, total events: 1
+info: SSE minimal streaming completed
+debug: [SSE] close called, already closed=false, event_count=1
+debug: [SSE] Writer closed after 1 events
+debug: [SSE] Write complete: 124 bytes written
+debug: [SSE] Removed from queue, remaining: 1 items, 41 bytes
+debug: [SSE] processWriteQueue: queue size=1, bytes_queued=41
+debug: [SSE] Writing chunk: 41 bytes
+debug: [SSE] Write complete: 41 bytes written
+debug: [SSE] Removed from queue, remaining: 0 items, 0 bytes
+debug: [SSE] processWriteQueue: queue size=0, bytes_queued=0
+debug: [SSE] Write queue empty, marking write_in_progress=false

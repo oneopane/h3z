@@ -2,7 +2,8 @@
 //! Provides a simple API that automatically selects the best adapter
 
 const std = @import("std");
-const H3App = @import("../core/app.zig").H3;
+const H3 = @import("../core/app.zig").H3;
+const H3App = @import("../core/app.zig").H3App;
 pub const ServeOptions = @import("config.zig").ServeOptions;
 const ConfigBuilder = @import("config.zig").ConfigBuilder;
 const ServerFactory = @import("adapter.zig").ServerFactory;
@@ -60,7 +61,7 @@ pub const Server = struct {
     }
 };
 
-/// Start a server with the given H3 app using automatic adapter selection
+/// Start a server with the given H3App using automatic adapter selection
 pub fn serve(app: *H3App, options: ServeOptions) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();

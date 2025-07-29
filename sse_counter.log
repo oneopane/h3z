@@ -1,0 +1,228 @@
+info: SSE Counter example starting on http://localhost:3000
+info: Visit http://localhost:3000 to see the counter
+debug: libxev components initialized successfully
+debug: New connection accepted
+debug: [Connection Created] Client port: 0, connection created, total connections: 1
+debug: [SUBMIT READ] conn_id=0
+debug: Connection established, total connections: 1
+debug: [CB READ] conn_id=0, compl_ptr=0x100fe0108
+debug: Received 83 bytes from connection
+debug: SSE mode detected, setting up streaming connection
+debug: [SSE] writeChunk called: 124 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 124 bytes, total queued: 124, queue size: 1
+debug: [SSE] Data preview: HTTP/1.1 200 OK
+Cache-Control: no-cache
+X-Accel-Buffering: no
+Content-Type: text/event-stream
+Co
+debug: [SSE] processWriteQueue: queue size=1, bytes_queued=124, closed=false
+debug: [SSE] Writing chunk: 124 bytes
+debug: SSE headers sent through streaming connection, 124 bytes
+debug: SSE callback scheduled for execution
+debug: Executing SSE streaming callback
+info: SSE counter streaming started
+debug: [SSE] sendEvent called, closed=false, event_count=0
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 0
+data: 0
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 154, queue size: 2
+debug: [SSE] Data preview: event: counter
+id: 0
+data: 0
+
+
+debug: [SSE] Event sent successfully, total events: 1
+debug: [SSE] sendEvent called, closed=false, event_count=1
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 1
+data: 1
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 184, queue size: 3
+debug: [SSE] Data preview: event: counter
+id: 1
+data: 1
+
+
+debug: [SSE] Event sent successfully, total events: 2
+debug: [SSE] sendEvent called, closed=false, event_count=2
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 2
+data: 2
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 214, queue size: 4
+debug: [SSE] Data preview: event: counter
+id: 2
+data: 2
+
+
+debug: [SSE] Event sent successfully, total events: 3
+debug: [SSE] sendEvent called, closed=false, event_count=3
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 3
+data: 3
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 244, queue size: 5
+debug: [SSE] Data preview: event: counter
+id: 3
+data: 3
+
+
+debug: [SSE] Event sent successfully, total events: 4
+debug: [SSE] sendEvent called, closed=false, event_count=4
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 4
+data: 4
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 274, queue size: 6
+debug: [SSE] Data preview: event: counter
+id: 4
+data: 4
+
+
+debug: [SSE] Event sent successfully, total events: 5
+debug: [SSE] sendEvent called, closed=false, event_count=5
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 5
+data: 5
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 304, queue size: 7
+debug: [SSE] Data preview: event: counter
+id: 5
+data: 5
+
+
+debug: [SSE] Event sent successfully, total events: 6
+debug: [SSE] sendEvent called, closed=false, event_count=6
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 6
+data: 6
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 334, queue size: 8
+debug: [SSE] Data preview: event: counter
+id: 6
+data: 6
+
+
+debug: [SSE] Event sent successfully, total events: 7
+debug: [SSE] sendEvent called, closed=false, event_count=7
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 7
+data: 7
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 364, queue size: 9
+debug: [SSE] Data preview: event: counter
+id: 7
+data: 7
+
+
+debug: [SSE] Event sent successfully, total events: 8
+debug: [SSE] sendEvent called, closed=false, event_count=8
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 8
+data: 8
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 394, queue size: 10
+debug: [SSE] Data preview: event: counter
+id: 8
+data: 8
+
+
+debug: [SSE] Event sent successfully, total events: 9
+debug: [SSE] sendEvent called, closed=false, event_count=9
+debug: [SSE] Formatted event: 30 bytes, preview: event: counter
+id: 9
+data: 9
+
+
+debug: [SSE] writeChunk called: 30 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 30 bytes, total queued: 424, queue size: 11
+debug: [SSE] Data preview: event: counter
+id: 9
+data: 9
+
+
+debug: [SSE] Event sent successfully, total events: 10
+debug: [SSE] sendEvent called, closed=false, event_count=10
+debug: [SSE] Formatted event: 38 bytes, preview: event: done
+data: Counter completed!
+
+
+debug: [SSE] writeChunk called: 38 bytes, closed=false, streaming=true
+debug: [SSE] Data queued: 38 bytes, total queued: 462, queue size: 12
+debug: [SSE] Data preview: event: done
+data: Counter completed!
+
+
+debug: [SSE] Event sent successfully, total events: 11
+info: SSE counter streaming completed
+debug: [SSE] close called, already closed=false, event_count=11
+debug: [SSE] Delaying close until write queue drains: 12 items pending
+debug: [SSE] Writer closed after 11 events
+debug: [SSE] Write complete: 124 bytes written
+debug: [SSE] Removed from queue, remaining: 11 items, 338 bytes
+debug: [SSE] processWriteQueue: queue size=11, bytes_queued=338, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 10 items, 308 bytes
+debug: [SSE] processWriteQueue: queue size=10, bytes_queued=308, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 9 items, 278 bytes
+debug: [SSE] processWriteQueue: queue size=9, bytes_queued=278, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 8 items, 248 bytes
+debug: [SSE] processWriteQueue: queue size=8, bytes_queued=248, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 7 items, 218 bytes
+debug: [SSE] processWriteQueue: queue size=7, bytes_queued=218, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 6 items, 188 bytes
+debug: [SSE] processWriteQueue: queue size=6, bytes_queued=188, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 5 items, 158 bytes
+debug: [SSE] processWriteQueue: queue size=5, bytes_queued=158, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 4 items, 128 bytes
+debug: [SSE] processWriteQueue: queue size=4, bytes_queued=128, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 3 items, 98 bytes
+debug: [SSE] processWriteQueue: queue size=3, bytes_queued=98, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 2 items, 68 bytes
+debug: [SSE] processWriteQueue: queue size=2, bytes_queued=68, closed=true
+debug: [SSE] Writing chunk: 30 bytes
+debug: [SSE] Write complete: 30 bytes written
+debug: [SSE] Removed from queue, remaining: 1 items, 38 bytes
+debug: [SSE] processWriteQueue: queue size=1, bytes_queued=38, closed=true
+debug: [SSE] Writing chunk: 38 bytes
+debug: [SSE] Write complete: 38 bytes written
+debug: [SSE] Removed from queue, remaining: 0 items, 0 bytes
+debug: [SSE] processWriteQueue: queue size=0, bytes_queued=0, closed=true
+debug: [SSE] Write queue empty, marking write_in_progress=false
+debug: [SSE] Queue drained, closing connection

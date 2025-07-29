@@ -2,7 +2,7 @@
 //! Provides a unified interface for different I/O implementations
 
 const std = @import("std");
-const H3App = @import("../core/app.zig").H3;
+const H3App = @import("../core/app.zig").H3App;
 const ServeOptions = @import("config.zig").ServeOptions;
 
 /// Server adapter interface

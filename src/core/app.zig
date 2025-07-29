@@ -108,7 +108,7 @@ pub const H3 = struct {
 
     /// Register a route handler for a specific HTTP method
     pub fn on(self: *H3, method: HttpMethod, pattern: []const u8, handler: Handler) *H3 {
-        self.router.addRoute(method, pattern, handler) catch |err| {
+        self.router.addLegacyRoute(method, pattern, handler) catch |err| {
             std.log.err("Failed to add route: {}", .{err});
             return self;
         };
@@ -342,29 +342,35 @@ pub const H3App = struct {
         self.memory_manager.deinit();
     }
 
-    /// Register a route handler
-    pub fn on(self: *Self, method: HttpMethod, pattern: []const u8, handler: Handler) !*Self {
+    /// Register a route handler with automatic type detection
+    pub fn on(self: *Self, method: HttpMethod, pattern: []const u8, comptime handler: anytype) !*Self {
         try self.router_component.addRoute(method, pattern, handler);
         return self;
     }
 
-    /// Register a GET route handler
-    pub fn get(self: *Self, pattern: []const u8, handler: Handler) !*Self {
+    /// Register a legacy route handler (for backward compatibility)
+    pub fn onLegacy(self: *Self, method: HttpMethod, pattern: []const u8, handler: Handler) !*Self {
+        try self.router_component.addLegacyRoute(method, pattern, handler);
+        return self;
+    }
+
+    /// Register a GET route handler with automatic type detection
+    pub fn get(self: *Self, pattern: []const u8, comptime handler: anytype) !*Self {
         return self.on(.GET, pattern, handler);
     }
 
-    /// Register a POST route handler
-    pub fn post(self: *Self, pattern: []const u8, handler: Handler) !*Self {
+    /// Register a POST route handler with automatic type detection
+    pub fn post(self: *Self, pattern: []const u8, comptime handler: anytype) !*Self {
         return self.on(.POST, pattern, handler);
     }
 
-    /// Register a PUT route handler
-    pub fn put(self: *Self, pattern: []const u8, handler: Handler) !*Self {
+    /// Register a PUT route handler with automatic type detection
+    pub fn put(self: *Self, pattern: []const u8, comptime handler: anytype) !*Self {
         return self.on(.PUT, pattern, handler);
     }
 
-    /// Register a DELETE route handler
-    pub fn delete(self: *Self, pattern: []const u8, handler: Handler) !*Self {
+    /// Register a DELETE route handler with automatic type detection
+    pub fn delete(self: *Self, pattern: []const u8, comptime handler: anytype) !*Self {
         return self.on(.DELETE, pattern, handler);
     }
 
@@ -392,7 +398,19 @@ pub const H3App = struct {
                 try event.setParam(entry.key_ptr.*, entry.value_ptr.*);
             }
 
-            try match.handler(event);
+            // Handle different handler types
+            switch (match.handler_type) {
+                .regular => {
+                    try match.handler(event);
+                },
+                .stream, .stream_with_loop => {
+                    // For streaming handlers, set up SSE mode and store handler info
+                    try event.startSSE();
+                    event.sse_typed_handler = match.typed_handler;
+                    event.sse_handler_type = match.handler_type;
+                    // Don't call the handler directly - the adapter will handle it
+                },
+            }
         } else {
             event.setStatus(.not_found);
             try event.sendText("Not Found");

@@ -2,12 +2,105 @@
 //! Defines the core handler interfaces and common handler patterns
 
 const std = @import("std");
+const xev = @import("xev");
 const H3Event = @import("event.zig").H3Event;
 const HttpMethod = @import("../http/method.zig").HttpMethod;
 const HttpStatus = @import("../http/status.zig").HttpStatus;
+const SSEWriter = @import("../http/sse.zig").SSEWriter;
 
-/// Basic handler function signature
+/// Basic handler function signature (legacy compatibility)
 pub const Handler = *const fn (*H3Event) anyerror!void;
+
+/// Handler type enumeration for dispatch
+pub const HandlerType = enum {
+    /// Regular synchronous handler: fn(*H3Event) !void
+    regular,
+    
+    /// SSE streaming handler without loop access: fn(*SSEWriter) !void  
+    stream,
+    
+    /// SSE streaming handler with loop access: fn(*SSEWriter, *xev.Loop) !void
+    stream_with_loop,
+};
+
+/// Tagged union of different handler function signatures
+pub const TypedHandler = union(HandlerType) {
+    /// Regular request/response handler
+    regular: *const fn(*H3Event) anyerror!void,
+    
+    /// SSE streaming handler (current callback style)
+    stream: *const fn(*SSEWriter) anyerror!void,
+    
+    /// SSE streaming handler with libxev loop access for timers
+    stream_with_loop: *const fn(*SSEWriter, *xev.Loop) anyerror!void,
+};
+
+/// Convenience functions for creating typed handlers
+
+/// Create a regular handler
+pub fn regular(handler_fn: *const fn(*H3Event) anyerror!void) TypedHandler {
+    return TypedHandler{ .regular = handler_fn };
+}
+
+/// Create a streaming handler
+pub fn stream(handler_fn: *const fn(*SSEWriter) anyerror!void) TypedHandler {
+    return TypedHandler{ .stream = handler_fn };
+}
+
+/// Create a streaming handler with loop access
+pub fn streamWithLoop(handler_fn: *const fn(*SSEWriter, *xev.Loop) anyerror!void) TypedHandler {
+    return TypedHandler{ .stream_with_loop = handler_fn };
+}
+
+/// Comptime function to automatically detect handler type from function signature
+pub fn detectHandlerType(comptime handler: anytype) HandlerType {
+    const handler_type = @TypeOf(handler);
+    const type_info = @typeInfo(handler_type);
+    
+    // Handle both direct functions and function pointers
+    const fn_info = switch (type_info) {
+        .@"fn" => type_info,
+        .pointer => |ptr_info| blk: {
+            const child_info = @typeInfo(ptr_info.child);
+            if (child_info != .@"fn") @compileError("Handler must be a function or function pointer");
+            break :blk child_info;
+        },
+        else => @compileError("Handler must be a function or function pointer"),
+    };
+    
+    const params = fn_info.@"fn".params;
+    
+    // Check parameter count and types
+    if (params.len == 1) {
+        // Single parameter handlers
+        if (params[0].type) |param_type| {
+            if (param_type == *H3Event) return .regular;
+            if (param_type == *SSEWriter) return .stream;
+        }
+    } else if (params.len == 2) {
+        // Two parameter handlers
+        if (params[0].type) |param1_type| {
+            if (params[1].type) |param2_type| {
+                if (param1_type == *SSEWriter and param2_type == *xev.Loop) {
+                    return .stream_with_loop;
+                }
+            }
+        }
+    }
+    
+    @compileError("Unsupported handler signature. Expected: fn(*H3Event)!void, fn(*SSEWriter)!void, or fn(*SSEWriter, *xev.Loop)!void");
+}
+
+/// Automatically create a TypedHandler from any supported function signature
+pub fn autoDetect(comptime handler: anytype) TypedHandler {
+    const handler_type = comptime detectHandlerType(handler);
+    
+    return switch (handler_type) {
+        .regular => TypedHandler{ .regular = handler },
+        .stream => TypedHandler{ .stream = handler },
+        .stream_with_loop => TypedHandler{ .stream_with_loop = handler },
+    };
+}
 
 /// Async handler function signature (for future async support)
 pub const AsyncHandler = *const fn (*H3Event) anyerror!void;
@@ -299,4 +392,85 @@ test "Handler patterns" {
     // Test redirect handler creation
     const redirect_handler = Handlers.redirect("/new-path", .found);
     _ = redirect_handler;
+}
+
+test "TypedHandler creation and dispatch" {
+    const testing = std.testing;
+    
+    // Mock functions for testing
+    const MockRegularHandler = struct {
+        fn handle(event: *H3Event) !void {
+            _ = event;
+        }
+    };
+    
+    const MockStreamHandler = struct {
+        fn handle(writer: *SSEWriter) !void {
+            _ = writer;
+        }
+    };
+    
+    const MockStreamWithLoopHandler = struct {
+        fn handle(writer: *SSEWriter, loop: *xev.Loop) !void {
+            _ = writer;
+            _ = loop;
+        }
+    };
+    
+    // Test handler creation
+    const reg_handler = regular(MockRegularHandler.handle);
+    const stream_handler = stream(MockStreamHandler.handle);
+    const stream_loop_handler = streamWithLoop(MockStreamWithLoopHandler.handle);
+    
+    // Test handler types
+    try testing.expect(reg_handler == .regular);
+    try testing.expect(stream_handler == .stream);
+    try testing.expect(stream_loop_handler == .stream_with_loop);
+    
+    // Test that function pointers are correctly stored
+    try testing.expect(@TypeOf(reg_handler.regular) == *const fn(*H3Event) anyerror!void);
+    try testing.expect(@TypeOf(stream_handler.stream) == *const fn(*SSEWriter) anyerror!void);
+    try testing.expect(@TypeOf(stream_loop_handler.stream_with_loop) == *const fn(*SSEWriter, *xev.Loop) anyerror!void);
+}
+
+test "Comptime handler type detection" {
+    const testing = std.testing;
+    
+    // Mock functions for testing
+    const MockRegularHandler = struct {
+        fn handle(event: *H3Event) !void {
+            _ = event;
+        }
+    };
+    
+    const MockStreamHandler = struct {
+        fn handle(writer: *SSEWriter) !void {
+            _ = writer;
+        }
+    };
+    
+    const MockStreamWithLoopHandler = struct {
+        fn handle(writer: *SSEWriter, loop: *xev.Loop) !void {
+            _ = writer;
+            _ = loop;
+        }
+    };
+    
+    // Test comptime detection
+    const detected_regular = comptime detectHandlerType(MockRegularHandler.handle);
+    const detected_stream = comptime detectHandlerType(MockStreamHandler.handle);
+    const detected_stream_loop = comptime detectHandlerType(MockStreamWithLoopHandler.handle);
+    
+    try testing.expect(detected_regular == .regular);
+    try testing.expect(detected_stream == .stream);
+    try testing.expect(detected_stream_loop == .stream_with_loop);
+    
+    // Test autoDetect
+    const auto_regular = autoDetect(MockRegularHandler.handle);
+    const auto_stream = autoDetect(MockStreamHandler.handle);
+    const auto_stream_loop = autoDetect(MockStreamWithLoopHandler.handle);
+    
+    try testing.expect(auto_regular == .regular);
+    try testing.expect(auto_stream == .stream);
+    try testing.expect(auto_stream_loop == .stream_with_loop);
 }

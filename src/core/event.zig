@@ -11,6 +11,9 @@ const sse = @import("../http/sse.zig");
 const SSEWriter = sse.SSEWriter;
 const SSEError = sse.SSEError;
 
+/// SSE streaming callback function type
+pub const SSEStreamCallback = *const fn (writer: *SSEWriter) anyerror!void;
+
 /// Context map for storing arbitrary data
 const Context = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage);
 
@@ -41,7 +44,14 @@ pub const H3Event = struct {
     response_sent: bool = false,
 
     /// SSE connection reference (optional)
-    sse_connection: ?*const @import("../server/sse_connection.zig").SSEConnection = null,
+    sse_connection: ?*@import("../server/sse_connection.zig").SSEConnection = null,
+
+    /// SSE streaming callback (set by handler, called by adapter)
+    sse_callback: ?SSEStreamCallback = null,
+    
+    /// Typed handler information for SSE streaming (new typed handler system)
+    sse_typed_handler: ?@import("handler.zig").TypedHandler = null,
+    sse_handler_type: @import("handler.zig").HandlerType = .regular,
 
     /// Initialize a new H3Event
     pub fn init(allocator: std.mem.Allocator) H3Event {
@@ -96,6 +106,9 @@ pub const H3Event = struct {
         self.sse_started = false;
         self.response_sent = false;
         self.sse_connection = null;
+        self.sse_callback = null;
+        self.sse_typed_handler = null;
+        self.sse_handler_type = .regular;
 
         // Safely free key-value pairs in the context hash map
         var context_keys = std.ArrayList([]const u8).init(self.allocator);
@@ -435,8 +448,14 @@ pub const H3Event = struct {
         
         // Create a new SSEWriter with the connection
         const writer = try self.allocator.create(SSEWriter);
-        writer.* = SSEWriter.init(self.allocator, @constCast(self.sse_connection.?));
+        writer.* = SSEWriter.init(self.allocator, self.sse_connection.?);
         return writer;
+    }
+
+    /// Set the SSE streaming callback
+    /// This callback will be invoked by the adapter after the SSE connection is established
+    pub fn setStreamCallback(self: *H3Event, callback: SSEStreamCallback) void {
+        self.sse_callback = callback;
     }
 
     /// Send the response (prevents SSE mode)

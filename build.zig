@@ -142,12 +142,45 @@ pub fn build(b: *std.Build) void {
     addTestCategory(b, lib_mod, target, optimize, "unit", "tests/unit/core_test.zig");
     addTestCategory(b, lib_mod, target, optimize, "integration", "tests/integration/routing_test.zig");
     addTestCategory(b, lib_mod, target, optimize, "performance", "tests/integration/performance_test.zig");
+    
+    // Add SSE integration test
+    const sse_integration_test = b.addTest(.{
+        .root_source_file = b.path("tests/integration/sse_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    sse_integration_test.root_module.addImport("h3z", lib_mod);
+    const run_sse_integration_test = b.addRunArtifact(sse_integration_test);
+    const sse_test_step = b.step("test-sse", "Run SSE integration tests");
+    sse_test_step.dependOn(&run_sse_integration_test.step);
+    
+    // Add SSE performance benchmark
+    const sse_benchmark = b.addTest(.{
+        .root_source_file = b.path("tests/performance/sse_benchmark.zig"),
+        .target = target,
+        .optimize = .ReleaseFast, // Use release mode for benchmarks
+    });
+    sse_benchmark.root_module.addImport("h3z", lib_mod);
+    const run_sse_benchmark = b.addRunArtifact(sse_benchmark);
+    const sse_benchmark_step = b.step("benchmark-sse", "Run SSE performance benchmarks");
+    sse_benchmark_step.dependOn(&run_sse_benchmark.step);
 
     // Add examples
-    addExample(b, lib_mod, target, optimize, "http_server", "examples/http_server.zig");
-    addExample(b, lib_mod, target, optimize, "simple_server", "examples/simple_server.zig");
-    addExample(b, lib_mod, target, optimize, "optimized_server", "examples/optimized_server.zig");
-    addExample(b, lib_mod, target, optimize, "rest_api", "examples/rest_api.zig");
+    // Legacy H3 examples (commented out - use H3App instead)
+    // addExample(b, lib_mod, target, optimize, "http_server", "examples/http_server.zig");
+    // addExample(b, lib_mod, target, optimize, "simple_server", "examples/simple_server.zig");
+    // addExample(b, lib_mod, target, optimize, "optimized_server", "examples/optimized_server.zig");
+    // addExample(b, lib_mod, target, optimize, "rest_api", "examples/rest_api.zig");
+    // addExample(b, lib_mod, target, optimize, "sse_basic", "examples/sse_basic.zig");
+    // addExample(b, lib_mod, target, optimize, "sse_chat", "examples/sse_chat.zig");
+    // addExample(b, lib_mod, target, optimize, "sse_proxy", "examples/sse_proxy.zig");
+    // addExample(b, lib_mod, target, optimize, "sse_text", "examples/sse_text.zig");
+    // addExample(b, lib_mod, target, optimize, "sse_callback", "examples/sse_callback.zig");
+    // addExample(b, lib_mod, target, optimize, "sse_minimal", "examples/sse_minimal.zig");
+    
+    // Modern H3App examples
+    addExample(b, lib_mod, target, optimize, "sse_counter", "examples/sse_counter.zig");
+    // addExample(b, lib_mod, target, optimize, "websocket_chat", "examples/websocket_chat.zig");
 
     // Performance benchmarks
     const benchmark_tests = b.addTest(.{

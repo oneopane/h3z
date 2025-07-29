@@ -11,8 +11,15 @@ const Component = component.Component;
 const BaseComponent = component.BaseComponent;
 const ComponentContext = component.ComponentContext;
 
-/// Handler function type
+/// Import the new handler system
+const handler_types = @import("handler.zig");
+
+/// Handler function type (legacy compatibility)
 pub const Handler = *const fn (*H3Event) anyerror!void;
+
+/// Re-export new handler types for convenience
+pub const HandlerType = handler_types.HandlerType;
+pub const TypedHandler = handler_types.TypedHandler;
 
 /// Route parameters container with pooling
 pub const RouteParams = struct {
@@ -378,12 +385,50 @@ const TrieRouter = struct {
 pub const Route = struct {
     method: HttpMethod,
     pattern: []const u8,
-    handler: Handler,
+    handler: Handler, // Legacy handler (for backward compatibility)
+    typed_handler: ?TypedHandler = null, // New typed handler system
+    handler_type: HandlerType = .regular, // Default to regular handler
+    
+    /// Create a route with legacy handler (for backward compatibility)
+    pub fn init(method: HttpMethod, pattern: []const u8, handler: Handler) Route {
+        return Route{
+            .method = method,
+            .pattern = pattern,
+            .handler = handler,
+            .typed_handler = TypedHandler{ .regular = handler },
+            .handler_type = .regular,
+        };
+    }
+    
+    /// Create a route with typed handler
+    pub fn initTyped(method: HttpMethod, pattern: []const u8, typed_handler: TypedHandler) Route {
+        // For backward compatibility, extract regular handler if possible
+        const legacy_handler = switch (typed_handler) {
+            .regular => |h| h,
+            else => @as(Handler, @ptrCast(&dummyHandler)), // Placeholder for non-regular handlers
+        };
+        
+        return Route{
+            .method = method,
+            .pattern = pattern,
+            .handler = legacy_handler,
+            .typed_handler = typed_handler,
+            .handler_type = @as(HandlerType, typed_handler),
+        };
+    }
+    
+    /// Dummy handler for non-regular handler types (should not be called)
+    fn dummyHandler(event: *H3Event) !void {
+        _ = event;
+        @panic("Attempted to call legacy handler on non-regular handler type");
+    }
 };
 
 /// Route match result
 pub const RouteMatch = struct {
-    handler: Handler,
+    handler: Handler, // Legacy handler (for backward compatibility)
+    typed_handler: TypedHandler, // New typed handler
+    handler_type: HandlerType, // Handler type for dispatch
     params: *RouteParams,
     method: HttpMethod,
     pattern: []const u8,
@@ -447,18 +492,32 @@ pub const Router = struct {
         self.params_pool.deinit();
     }
 
-    /// Add a route with multi-tier optimization
-    pub fn addRoute(self: *Router, method: HttpMethod, pattern: []const u8, handler: Handler) !void {
+    /// Add a route with automatic handler type detection
+    pub fn addRoute(self: *Router, method: HttpMethod, pattern: []const u8, comptime handler: anytype) !void {
+        const typed_handler = handler_types.autoDetect(handler);
+        return self.addTypedRoute(method, pattern, typed_handler);
+    }
+    
+    /// Add a route with legacy handler (for backward compatibility)
+    pub fn addLegacyRoute(self: *Router, method: HttpMethod, pattern: []const u8, handler: Handler) !void {
+        const typed_handler = TypedHandler{ .regular = handler };
+        return self.addTypedRoute(method, pattern, typed_handler);
+    }
+    
+    /// Add a route with typed handler support
+    pub fn addTypedRoute(self: *Router, method: HttpMethod, pattern: []const u8, typed_handler: TypedHandler) !void {
         const method_index = @intFromEnum(method);
+        
+        // Extract legacy handler for trie router compatibility
+        const legacy_handler = switch (typed_handler) {
+            .regular => |h| h,
+            else => @as(Handler, @ptrCast(&Route.dummyHandler)),
+        };
 
         // Add to Trie router for O(log n) lookups
-        try self.trie_router.addRoute(method, pattern, handler);
+        try self.trie_router.addRoute(method, pattern, legacy_handler);
 
-        const route = Route{
-            .method = method,
-            .pattern = pattern,
-            .handler = handler,
-        };
+        const route = Route.initTyped(method, pattern, typed_handler);
         try self.method_routes[method_index].append(route);
     }
 
@@ -475,8 +534,15 @@ pub const Router = struct {
                     params.put(entry.key_ptr.*, entry.value_ptr.*) catch {};
                 }
 
+                // For cached routes, we need to look up the typed handler from stored routes
+                // This is a limitation of the cache - we'll need to enhance it later
+                const legacy_handler = cached.handler.?;
+                const typed_handler = TypedHandler{ .regular = legacy_handler };
+                
                 return RouteMatch{
-                    .handler = cached.handler.?,
+                    .handler = legacy_handler,
+                    .typed_handler = typed_handler,
+                    .handler_type = .regular,
                     .params = params,
                     .method = method,
                     .pattern = path,
@@ -486,6 +552,22 @@ pub const Router = struct {
 
         // Tier 2: Trie router lookup (O(log n))
         if (self.trie_router.findRoute(method, path)) |trie_match| {
+            // Find the corresponding route with typed handler information
+            const method_index = @intFromEnum(method);
+            var typed_handler = TypedHandler{ .regular = trie_match.handler };
+            var handler_type = HandlerType.regular;
+            
+            // Search through stored routes to find the typed handler
+            for (self.method_routes[method_index].items) |route| {
+                if (std.mem.eql(u8, route.pattern, trie_match.pattern)) {
+                    if (route.typed_handler) |th| {
+                        typed_handler = th;
+                        handler_type = route.handler_type;
+                    }
+                    break;
+                }
+            }
+            
             // Cache the result for future lookups
             if (self.config.enable_cache) {
                 self.route_cache.put(method, path, trie_match.handler, trie_match.params.params) catch {};
@@ -493,6 +575,8 @@ pub const Router = struct {
 
             return RouteMatch{
                 .handler = trie_match.handler,
+                .typed_handler = typed_handler,
+                .handler_type = handler_type,
                 .params = trie_match.params,
                 .method = method,
                 .pattern = trie_match.pattern,
@@ -599,9 +683,19 @@ pub const RouterComponent = struct {
         return &self.router;
     }
 
-    /// Add a route through the component
-    pub fn addRoute(self: *Self, method: HttpMethod, pattern: []const u8, handler: Handler) !void {
+    /// Add a route with automatic handler type detection
+    pub fn addRoute(self: *Self, method: HttpMethod, pattern: []const u8, comptime handler: anytype) !void {
         return self.router.addRoute(method, pattern, handler);
+    }
+    
+    /// Add a route with legacy handler (for backward compatibility)
+    pub fn addLegacyRoute(self: *Self, method: HttpMethod, pattern: []const u8, handler: Handler) !void {
+        return self.router.addLegacyRoute(method, pattern, handler);
+    }
+    
+    /// Add a typed route through the component
+    pub fn addTypedRoute(self: *Self, method: HttpMethod, pattern: []const u8, typed_handler: TypedHandler) !void {
+        return self.router.addTypedRoute(method, pattern, typed_handler);
     }
 
     /// Find a route through the component
