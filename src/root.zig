@@ -113,7 +113,6 @@ pub const server = struct {
     pub const config = @import("server/config.zig");
     pub const adapter = @import("server/adapter.zig");
     pub const adapters = struct {
-        pub const std = @import("server/adapters/std.zig");
         pub const libxev = @import("server/adapters/libxev.zig");
     };
 };

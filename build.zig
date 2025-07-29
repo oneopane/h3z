@@ -166,11 +166,12 @@ pub fn build(b: *std.Build) void {
     sse_benchmark_step.dependOn(&run_sse_benchmark.step);
 
     // Add examples
-    // Legacy H3 examples (commented out - use H3App instead)
-    // addExample(b, lib_mod, target, optimize, "http_server", "examples/http_server.zig");
-    // addExample(b, lib_mod, target, optimize, "simple_server", "examples/simple_server.zig");
-    // addExample(b, lib_mod, target, optimize, "optimized_server", "examples/optimized_server.zig");
-    // addExample(b, lib_mod, target, optimize, "rest_api", "examples/rest_api.zig");
+    // H3App examples (updated to use modern API)
+    addExample(b, lib_mod, target, optimize, "http_server", "examples/http_server.zig");
+    addExample(b, lib_mod, target, optimize, "simple_server", "examples/simple_server.zig");
+    addExample(b, lib_mod, target, optimize, "optimized_server", "examples/optimized_server.zig");
+    addExample(b, lib_mod, target, optimize, "rest_api", "examples/rest_api.zig");
+    addExample(b, lib_mod, target, optimize, "architecture_demo", "examples/architecture_demo.zig");
     // addExample(b, lib_mod, target, optimize, "sse_basic", "examples/sse_basic.zig");
     // addExample(b, lib_mod, target, optimize, "sse_chat", "examples/sse_chat.zig");
     // addExample(b, lib_mod, target, optimize, "sse_proxy", "examples/sse_proxy.zig");

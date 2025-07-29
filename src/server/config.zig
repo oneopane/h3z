@@ -215,27 +215,10 @@ pub const ServeOptions = struct {
 
 /// Adapter-specific configuration options
 pub const AdapterOptions = struct {
-    /// Standard library adapter options
-    std: StdAdapterOptions = .{},
     /// libxev adapter options
     libxev: LibxevAdapterOptions = .{},
 };
 
-/// Standard library adapter specific options
-pub const StdAdapterOptions = struct {
-    /// Use thread pool for request handling
-    use_thread_pool: bool = false,
-    /// Socket reuse address option
-    reuse_address: bool = true,
-    /// Socket reuse port option (Linux)
-    reuse_port: bool = false,
-    /// TCP no delay option
-    no_delay: bool = true,
-    /// Socket receive buffer size
-    recv_buffer_size: ?u32 = null,
-    /// Socket send buffer size
-    send_buffer_size: ?u32 = null,
-};
 
 /// libxev adapter specific options
 pub const LibxevAdapterOptions = struct {

@@ -2,7 +2,10 @@
 //! Demonstrates multipart form data handling, file uploads, and streaming
 
 const std = @import("std");
-const h3 = @import("h3");
+const h3z = @import("h3");
+
+// NOTE: This example needs significant updates for the new H3App API
+// File upload handling, middleware, and configuration may need different approaches
 
 const FileInfo = struct {
     id: []const u8,
@@ -30,37 +33,29 @@ pub fn main() !void {
         else => return err,
     };
 
-    // Create app with custom config for file uploads
-    const config = h3.ConfigBuilder.init()
-        .setMaxRequestSize(50 * 1024 * 1024) // 50MB max upload
-        .setUseEventPool(true)
-        .setUseFastMiddleware(true)
-        .build();
-
-    var app = try h3.createAppWithConfig(allocator, config);
+    // Create app using modern component-based API
+    var app = try h3z.H3App.init(allocator);
     defer app.deinit();
 
-    // Middleware
-    _ = app.useFast(h3.fastMiddleware.logger);
-    _ = app.useFast(h3.fastMiddleware.cors);
-    _ = app.use(uploadMiddleware);
+    // Note: Middleware system would need to be updated for H3App API
+    // Upload middleware would be implemented differently
 
     // Routes
-    _ = app.get("/", uploadFormHandler);
-    _ = app.post("/upload", uploadHandler);
-    _ = app.get("/uploads", listUploadsHandler);
-    _ = app.get("/download/:id", downloadHandler);
-    _ = app.delete("/upload/:id", deleteUploadHandler);
-    _ = app.post("/upload/chunked", chunkedUploadHandler);
-    _ = app.get("/stream/:id", streamFileHandler);
+    _ = try app.get("/", uploadFormHandler);
+    _ = try app.post("/upload", uploadHandler);
+    _ = try app.get("/uploads", listUploadsHandler);
+    _ = try app.get("/download/:id", downloadHandler);
+    _ = try app.delete("/upload/:id", deleteUploadHandler);
+    _ = try app.post("/upload/chunked", chunkedUploadHandler);
+    _ = try app.get("/stream/:id", streamFileHandler);
 
     std.log.info("📁 File Upload server starting on http://127.0.0.1:3000", .{});
     std.log.info("Max upload size: 50MB", .{});
 
-    try h3.serve(&app, .{ .port = 3000 });
+    try h3z.serve(&app, h3z.ServeOptions{ .port = 3000 });
 }
 
-fn uploadFormHandler(event: *h3.Event) !void {
+fn uploadFormHandler(event: *h3z.H3Event) !void {
     const html =
         \\<!DOCTYPE html>
         \\<html>
@@ -262,7 +257,7 @@ fn uploadFormHandler(event: *h3.Event) !void {
         \\</html>
     ;
 
-    try h3.sendHtml(event, html);
+    try event.sendHtml(html);
 }
 
 fn uploadMiddleware(ctx: *h3.MiddlewareContext, next: h3.Handler) !void {
@@ -325,7 +320,7 @@ fn uploadHandler(event: *h3.Event) !void {
         .file = file_info,
     };
 
-    try h3.sendJson(event, response);
+    try event.sendJson(response);
 }
 
 fn listUploadsHandler(event: *h3.Event) !void {
@@ -427,7 +422,7 @@ fn chunkedUploadHandler(event: *h3.Event) !void {
         .message = "Chunk received",
     };
 
-    try h3.sendJson(event, response);
+    try event.sendJson(response);
 }
 
 fn streamFileHandler(event: *h3.Event) !void {

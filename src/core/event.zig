@@ -358,9 +358,7 @@ pub const H3Event = struct {
     /// It handles potential memory allocations and ensures they are properly deinitialized.
     pub fn readJson(self: *const H3Event, comptime T: type) !T {
         const body = self.readBody() orelse return error.NoBody;
-        var parsed = try std.json.parseFromSlice(T, self.allocator, body, .{
-            .allocator = self.allocator, // Pass allocator for parsing
-        });
+        var parsed = try std.json.parseFromSlice(T, self.allocator, body, .{});
         defer parsed.deinit(); // Ensure deinit is called to free parsed resources
 
         // For types that might own memory (like slices or strings not part of the original body),

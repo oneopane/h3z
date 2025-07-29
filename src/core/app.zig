@@ -22,9 +22,6 @@ const component = @import("component.zig");
 const ComponentRegistry = component.ComponentRegistry;
 const FastMiddleware = @import("fast_middleware.zig").FastMiddleware;
 
-
-
-/// Next-generation H3 application with component-based architecture
 pub const H3App = struct {
     // Core components
     memory_manager: MemoryManager,
@@ -37,6 +34,7 @@ pub const H3App = struct {
 
     const Self = @This();
 
+    // TODO: Change initialization so that we do something using comptime (init and initWithConfig)
     /// Initialize a new H3 application with component architecture
     pub fn init(allocator: std.mem.Allocator) !Self {
         const h3_config = config.H3Config.development();
@@ -75,12 +73,6 @@ pub const H3App = struct {
     /// Register a route handler with automatic type detection
     pub fn on(self: *Self, method: HttpMethod, pattern: []const u8, comptime handler: anytype) !*Self {
         try self.router_component.addRoute(method, pattern, handler);
-        return self;
-    }
-
-    /// Register a legacy route handler (for backward compatibility)
-    pub fn onLegacy(self: *Self, method: HttpMethod, pattern: []const u8, handler: Handler) !*Self {
-        try self.router_component.addLegacyRoute(method, pattern, handler);
         return self;
     }
 
@@ -184,19 +176,18 @@ pub const H3App = struct {
     }
 };
 
-/// Create a fast H3 application with performance optimizations
-pub fn createFastApp(allocator: std.mem.Allocator) !H3App {
-    const fast_config = config.H3Config.production();
-    return H3App.initWithConfig(allocator, fast_config);
-}
-
-/// Create a development H3 application
-pub fn createDevApp(allocator: std.mem.Allocator) !H3App {
-    const dev_config = config.H3Config.development();
-    return H3App.initWithConfig(allocator, dev_config);
-}
-
-
+// /// Create a fast H3 application with performance optimizations
+// pub fn createFastApp(allocator: std.mem.Allocator) !H3App {
+//     const fast_config = config.H3Config.production();
+//     return H3App.initWithConfig(allocator, fast_config);
+// }
+//
+// /// Create a development H3 application
+// pub fn createDevApp(allocator: std.mem.Allocator) !H3App {
+//     const dev_config = config.H3Config.development();
+//     return H3App.initWithConfig(allocator, dev_config);
+// }
+//
 test "H3App component architecture" {
     // Use testing config to avoid memory leaks
     const test_config = config.H3Config.testing();

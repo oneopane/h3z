@@ -2,36 +2,36 @@
 //! Demonstrates the new clean API
 
 const std = @import("std");
-const h3 = @import("h3");
+const h3z = @import("h3");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create app with new API
-    var app = try h3.createApp(allocator);
+    // Create app using modern component-based API
+    var app = try h3z.H3App.init(allocator);
     defer app.deinit();
 
-    // Add middleware
-    _ = app.use(h3.middleware.logger);
-    _ = app.use(h3.middleware.cors);
-    _ = app.use(h3.middleware.security);
+    // Note: Middleware system may need to be updated for H3App API
+    // _ = app.use(h3z.middleware.logger);
+    // _ = app.use(h3z.middleware.cors);
+    // _ = app.use(h3z.middleware.security);
 
     // Simple routes
-    _ = app.get("/", homeHandler);
-    _ = app.get("/hello/:name", helloHandler);
-    _ = app.post("/api/data", dataHandler);
-    _ = app.get("/api/status", statusHandler);
+    _ = try app.get("/", homeHandler);
+    _ = try app.get("/hello/:name", helloHandler);
+    _ = try app.post("/api/data", dataHandler);
+    _ = try app.get("/api/status", statusHandler);
 
     std.log.info("🚀 Simple H3 server starting on http://127.0.0.1:3000", .{});
     std.log.info("Press Ctrl+C to stop the server", .{});
 
     // Start server
-    try h3.serve(&app, .{ .port = 3000 });
+    try h3z.serve(&app, h3z.ServeOptions{ .port = 3000 });
 }
 
-fn homeHandler(event: *h3.Event) !void {
+fn homeHandler(event: *h3z.H3Event) !void {
     const html =
         \\<!DOCTYPE html>
         \\<html>
@@ -88,11 +88,11 @@ fn homeHandler(event: *h3.Event) !void {
         \\</html>
     ;
 
-    try h3.sendHtml(event, html);
+    try event.sendHtml(html);
 }
 
-fn helloHandler(event: *h3.Event) !void {
-    const name = h3.getParam(event, "name") orelse "Anonymous";
+fn helloHandler(event: *h3z.H3Event) !void {
+    const name = event.getParam("name") orelse "Anonymous";
 
     const greeting = .{
         .message = "Hello from H3!",
@@ -101,17 +101,18 @@ fn helloHandler(event: *h3.Event) !void {
         .server = "H3 Simple Server",
     };
 
-    try h3.sendJson(event, greeting);
+    try event.sendJsonValue(greeting);
 }
 
-fn dataHandler(event: *h3.Event) !void {
+fn dataHandler(event: *h3z.H3Event) !void {
     // Check if request has JSON content
-    if (!h3.isJson(event)) {
-        try h3.response.badRequest(event, "Expected JSON content");
+    if (!event.request.isJson()) {
+        event.setStatus(.bad_request);
+        try event.sendError(.bad_request, "Expected JSON content");
         return;
     }
 
-    const body = h3.readBody(event) orelse "";
+    const body = event.readBody() orelse "";
 
     const response_data = .{
         .received = body,
@@ -120,14 +121,15 @@ fn dataHandler(event: *h3.Event) !void {
         .echo = "Data received successfully",
     };
 
-    try h3.response.created(event, response_data);
+    event.setStatus(.created);
+    try event.sendJsonValue(response_data);
 }
 
-fn statusHandler(event: *h3.Event) !void {
+fn statusHandler(event: *h3z.H3Event) !void {
     const status = .{
         .server = "H3 Simple Server",
         .status = "healthy",
-        .version = h3.version,
+        .version = "0.1.0", // h3z version
         .uptime = "running",
         .timestamp = std.time.timestamp(),
         .endpoints = .{
@@ -136,5 +138,5 @@ fn statusHandler(event: *h3.Event) !void {
         },
     };
 
-    try h3.response.ok(event, status);
+    try event.sendJsonValue(status);
 }

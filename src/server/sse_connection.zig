@@ -15,20 +15,17 @@ pub const SSEConnectionError = error{
 
 /// Forward declarations for adapter-specific connection types
 pub const LibxevConnection = @import("adapters/libxev.zig").LibxevConnection;
-pub const StdConnection = @import("adapters/std.zig").StdConnection;
 
 /// Unified SSE connection interface as a tagged union
 /// Allows adapter-agnostic SSE streaming operations
 pub const SSEConnection = union(enum) {
     libxev: *LibxevConnection,
-    std: *StdConnection,
 
     /// Write a chunk of data without closing the connection
     /// Used for streaming protocols like SSE
     pub fn writeChunk(self: SSEConnection, data: []const u8) SSEConnectionError!void {
         return switch (self) {
             .libxev => |conn| conn.writeChunk(data),
-            .std => |conn| conn.writeChunk(data),
         };
     }
 
@@ -37,7 +34,6 @@ pub const SSEConnection = union(enum) {
     pub fn flush(self: SSEConnection) SSEConnectionError!void {
         return switch (self) {
             .libxev => |conn| conn.flush(),
-            .std => |conn| conn.flush(),
         };
     }
 
@@ -46,7 +42,6 @@ pub const SSEConnection = union(enum) {
     pub fn close(self: SSEConnection) void {
         switch (self) {
             .libxev => |conn| conn.close(),
-            .std => |conn| conn.close(),
         }
     }
 
@@ -55,7 +50,6 @@ pub const SSEConnection = union(enum) {
     pub fn isAlive(self: SSEConnection) bool {
         return switch (self) {
             .libxev => |conn| conn.isAlive(),
-            .std => |conn| conn.isAlive(),
         };
     }
 
@@ -63,7 +57,6 @@ pub const SSEConnection = union(enum) {
     pub fn getAdapterType(self: SSEConnection) AdapterType {
         return switch (self) {
             .libxev => .libxev,
-            .std => .std,
         };
     }
 };
@@ -71,7 +64,6 @@ pub const SSEConnection = union(enum) {
 /// Adapter type enumeration
 pub const AdapterType = enum {
     libxev,
-    std,
 };
 
 /// SSE connection capabilities and state

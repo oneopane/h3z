@@ -2,7 +2,7 @@
 //! Demonstrates JWT-like authentication, middleware, and protected routes
 
 const std = @import("std");
-const h3 = @import("h3");
+const h3z = @import("h3");
 
 const User = struct {
     id: u32,
@@ -47,20 +47,18 @@ pub fn main() !void {
         .password_hash = "hashed_password", // In real app, use proper hashing
     });
 
-    // Create app with fast middleware
-    var app = try h3.createFastApp(allocator);
+    // Create app using modern component-based API
+    var app = try h3z.H3App.init(allocator);
     defer app.deinit();
 
-    // Global middleware
-    _ = app.useFast(h3.fastMiddleware.logger);
-    _ = app.useFast(h3.fastMiddleware.cors);
-    _ = app.useFast(h3.fastMiddleware.security);
-    _ = app.use(h3.middleware.jsonParser);
+    // Note: Middleware system may need to be updated for H3App API
+    // Global middleware would be implemented differently
+    // _ = app.use(middlewareFunction);
 
     // Public routes
-    _ = app.post("/api/auth/register", registerHandler);
-    _ = app.post("/api/auth/login", loginHandler);
-    _ = app.get("/api/health", healthHandler);
+    _ = try app.post("/api/auth/register", registerHandler);
+    _ = try app.post("/api/auth/login", loginHandler);
+    _ = try app.get("/api/health", healthHandler);
 
     // Protected routes with auth middleware
     const protected = app.group("/api/protected");
@@ -80,7 +78,7 @@ pub fn main() !void {
     std.log.info("🔐 Authentication API server starting on http://127.0.0.1:3000", .{});
     std.log.info("Default user - username: admin, password: password", .{});
 
-    try h3.serve(&app, .{ .port = 3000 });
+    try h3z.serve(&app, h3z.ServeOptions{ .port = 3000 });
 }
 
 fn healthHandler(event: *h3.Event) !void {
@@ -157,7 +155,8 @@ fn loginHandler(event: *h3.Event) !void {
     }
 
     const user = found_user orelse {
-        try h3.response.unauthorized(event, "Invalid credentials");
+        try event.sendStatus(.unauthorized);
+        try event.sendText("Invalid credentials");
         return;
     };
 
@@ -170,7 +169,8 @@ fn loginHandler(event: *h3.Event) !void {
     defer event.allocator.free(expected_hash);
 
     if (!std.mem.eql(u8, user.password_hash, expected_hash)) {
-        try h3.response.unauthorized(event, "Invalid credentials");
+        try event.sendStatus(.unauthorized);
+        try event.sendText("Invalid credentials");
         return;
     }
 

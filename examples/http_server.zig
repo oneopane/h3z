@@ -2,27 +2,27 @@
 //! Demonstrates running an actual HTTP server with H3
 
 const std = @import("std");
-const h3 = @import("h3");
+const h3z = @import("h3");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create H3 app
-    var app = try h3.createApp(allocator);
+    // Create app using modern component-based API
+    var app = try h3z.H3App.init(allocator);
     defer app.deinit();
 
-    // Add middleware
-    _ = app.use(h3.middleware.logger);
-    _ = app.use(h3.middleware.cors);
+    // Note: Middleware system may need to be updated for H3App API
+    // _ = app.use(h3z.middleware.logger);
+    // _ = app.use(h3z.middleware.cors);
 
     // Add routes
-    _ = app.get("/", homeHandler);
-    _ = app.get("/api/health", healthHandler);
-    _ = app.get("/api/time", timeHandler);
-    _ = app.post("/api/echo", echoHandler);
-    _ = app.get("/api/users/:id", getUserHandler);
+    _ = try app.get("/", homeHandler);
+    _ = try app.get("/api/health", healthHandler);
+    _ = try app.get("/api/time", timeHandler);
+    _ = try app.post("/api/echo", echoHandler);
+    _ = try app.get("/api/users/:id", getUserHandler);
 
     std.log.info("🚀 Starting H3 HTTP Server", .{});
     std.log.info("============================", .{});
@@ -40,14 +40,14 @@ pub fn main() !void {
     std.log.info("", .{});
 
     // Start the server
-    try h3.serve(&app, .{
+    try h3z.serve(&app, h3z.ServeOptions{
         .host = "127.0.0.1",
         .port = 3000,
     });
 }
 
 // Route handlers
-fn homeHandler(event: *h3.Event) !void {
+fn homeHandler(event: *h3z.H3Event) !void {
     const html =
         \\<!DOCTYPE html>
         \\<html>
@@ -133,10 +133,10 @@ fn homeHandler(event: *h3.Event) !void {
         \\</html>
     ;
 
-    try h3.sendHtml(event, html);
+    try event.sendHtml(html);
 }
 
-fn healthHandler(event: *h3.Event) !void {
+fn healthHandler(event: *h3z.H3Event) !void {
     const health = .{
         .status = "healthy",
         .server = "H3",
@@ -149,10 +149,10 @@ fn healthHandler(event: *h3.Event) !void {
         },
     };
 
-    try h3.sendJson(event, health);
+    try event.sendJsonValue(health);
 }
 
-fn timeHandler(event: *h3.Event) !void {
+fn timeHandler(event: *h3z.H3Event) !void {
     const now = std.time.timestamp();
     const time_info = .{
         .timestamp = now,
@@ -161,38 +161,38 @@ fn timeHandler(event: *h3.Event) !void {
         .server_time = now,
     };
 
-    try h3.sendJson(event, time_info);
+    try event.sendJsonValue(time_info);
 }
 
-fn echoHandler(event: *h3.Event) !void {
-    const body = h3.readBody(event) orelse "";
+fn echoHandler(event: *h3z.H3Event) !void {
+    const body = event.readBody() orelse "";
 
     const echo_response = .{
         .message = "Echo response from H3 server",
-        .method = event.getMethod().toString(),
+        .method = @tagName(event.request.method),
         .path = event.getPath(),
         .headers = .{
-            .content_type = event.getHeader("content-type"),
-            .user_agent = event.getHeader("user-agent"),
-            .host = event.getHeader("host"),
+            .content_type = event.request.getHeader("content-type"),
+            .user_agent = event.request.getHeader("user-agent"),
+            .host = event.request.getHeader("host"),
         },
         .body = .{
             .received = body,
             .length = body.len,
-            .is_json = event.isJson(),
+            .is_json = event.request.isJson(),
         },
         .timestamp = std.time.timestamp(),
     };
 
-    try h3.sendJson(event, echo_response);
+    try event.sendJsonValue(echo_response);
 }
 
-fn getUserHandler(event: *h3.Event) !void {
-    const user_id = h3.getParam(event, "id") orelse "unknown";
+fn getUserHandler(event: *h3z.H3Event) !void {
+    const user_id = event.getParam("id") orelse "unknown";
 
     // Parse user ID
     const id = std.fmt.parseInt(u32, user_id, 10) catch {
-        try h3.response.badRequest(event, "Invalid user ID format");
+        try event.sendError(.bad_request, "Invalid user ID format");
         return;
     };
 
@@ -210,5 +210,5 @@ fn getUserHandler(event: *h3.Event) !void {
         },
     };
 
-    try h3.sendJson(event, user);
+    try event.sendJsonValue(user);
 }

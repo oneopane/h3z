@@ -69,13 +69,12 @@ pub const IOModel = enum {
 
 /// Adapter types
 pub const AdapterType = enum {
-    std,
     libxev,
     auto,
 
     /// Get the best adapter for the current platform
     pub fn getBest() AdapterType {
-        // libxev is now always available as a dependency
+        // libxev is the only available adapter
         return .libxev;
     }
 };
@@ -128,7 +127,6 @@ pub const ServerFactory = struct {
     /// Create a server with specific adapter type
     pub fn createWithType(adapter_type: AdapterType, allocator: std.mem.Allocator, app: *H3App) AnyServer {
         return switch (adapter_type) {
-            .std => AnyServer{ .std = createServer(@import("adapters/std.zig").StdAdapter, allocator, app) },
             .libxev => AnyServer{ .libxev = createServer(@import("adapters/libxev.zig").LibxevAdapter, allocator, app) },
             .auto => createAuto(allocator, app),
         };
@@ -137,13 +135,11 @@ pub const ServerFactory = struct {
 
 /// Type-erased server for runtime adapter selection
 pub const AnyServer = union(AdapterType) {
-    std: ServerAdapter(@import("adapters/std.zig").StdAdapter),
     libxev: ServerAdapter(@import("adapters/libxev.zig").LibxevAdapter),
     auto: void, // Placeholder
 
     pub fn listen(self: *AnyServer, options: ServeOptions) !void {
         return switch (self.*) {
-            .std => |*adapter| adapter.listen(options),
             .libxev => |*adapter| adapter.listen(options),
             .auto => unreachable,
         };
@@ -151,7 +147,6 @@ pub const AnyServer = union(AdapterType) {
 
     pub fn stop(self: *AnyServer) void {
         return switch (self.*) {
-            .std => |*adapter| adapter.stop(),
             .libxev => |*adapter| adapter.stop(),
             .auto => unreachable,
         };
@@ -159,7 +154,6 @@ pub const AnyServer = union(AdapterType) {
 
     pub fn deinit(self: *AnyServer) void {
         return switch (self.*) {
-            .std => |*adapter| adapter.deinit(),
             .libxev => |*adapter| adapter.deinit(),
             .auto => unreachable,
         };
@@ -167,7 +161,6 @@ pub const AnyServer = union(AdapterType) {
 
     pub fn info(self: *AnyServer) AdapterInfo {
         return switch (self.*) {
-            .std => |*adapter| adapter.info(),
             .libxev => |*adapter| adapter.info(),
             .auto => unreachable,
         };
@@ -179,7 +172,6 @@ pub const AdapterUtils = struct {
     /// Check if an adapter is available at compile time
     pub fn isAvailable(comptime adapter_type: AdapterType) bool {
         return switch (adapter_type) {
-            .std => true, // Always available
             .libxev => true, // Always available as dependency
             .auto => true,
         };
@@ -188,7 +180,6 @@ pub const AdapterUtils = struct {
     /// Get adapter name as string
     pub fn getName(adapter_type: AdapterType) []const u8 {
         return switch (adapter_type) {
-            .std => "std",
             .libxev => "libxev",
             .auto => "auto",
         };
@@ -197,7 +188,6 @@ pub const AdapterUtils = struct {
     /// Compare adapter performance characteristics
     pub fn comparePerformance(a: AdapterType, b: AdapterType) std.math.Order {
         const scores = std.EnumMap(AdapterType, u8).init(.{
-            .std = 1,
             .libxev = 3,
             .auto = 0,
         });
@@ -212,21 +202,18 @@ pub const AdapterUtils = struct {
 // Tests
 test "AdapterType.getBest" {
     const best = AdapterType.getBest();
-    try std.testing.expect(best == .libxev or best == .std);
+    try std.testing.expect(best == .libxev);
 }
 
 test "AdapterUtils.isAvailable" {
-    try std.testing.expect(AdapterUtils.isAvailable(.std));
-    // libxev availability depends on build configuration
+    try std.testing.expect(AdapterUtils.isAvailable(.libxev));
 }
 
 test "AdapterUtils.getName" {
-    try std.testing.expectEqualStrings("std", AdapterUtils.getName(.std));
     try std.testing.expectEqualStrings("libxev", AdapterUtils.getName(.libxev));
     try std.testing.expectEqualStrings("auto", AdapterUtils.getName(.auto));
 }
 
 test "AdapterUtils.comparePerformance" {
-    try std.testing.expect(AdapterUtils.comparePerformance(.libxev, .std) == .gt);
-    try std.testing.expect(AdapterUtils.comparePerformance(.std, .std) == .eq);
+    try std.testing.expect(AdapterUtils.comparePerformance(.libxev, .libxev) == .eq);
 }

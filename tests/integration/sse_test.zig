@@ -301,25 +301,13 @@ test "LibxevAdapter SSE functionality" {
     // TODO: Verify async behavior
 }
 
-test "StdAdapter SSE functionality" {
-    if (true) return error.SkipZigTest; // Requires adapter integration
-    
-    var app = try H3App.init(testing.allocator);
-    defer app.deinit();
-    
-    _ = try app.get("/std-sse", sseTestHandler);
-    
-    // TODO: Start server with StdAdapter
-    // TODO: Test SSE functionality
-    // TODO: Verify blocking behavior
-}
 
-test "Consistent behavior across adapters" {
+test "LibxevAdapter behavior validation" {
     if (true) return error.SkipZigTest; // Requires adapter integration
     
-    // TODO: Test same SSE endpoint with both adapters
-    // TODO: Verify identical behavior
-    // TODO: Compare performance characteristics
+    // TODO: Test SSE endpoint with libxev adapter
+    // TODO: Verify expected behavior patterns
+    // TODO: Benchmark performance characteristics
 }
 
 // Edge case handlers
