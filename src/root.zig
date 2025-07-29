@@ -30,9 +30,7 @@
 
 const std = @import("std");
 
-// Re-export core types and functions (Legacy API)
-pub const App = @import("core/app.zig").H3;
-pub const H3 = @import("core/app.zig").H3; // Alias for App
+// Re-export core types and functions
 pub const Event = @import("core/event.zig").H3Event;
 pub const H3Event = @import("core/event.zig").H3Event; // Modern export
 pub const Handler = @import("core/handler.zig").Handler;
@@ -124,23 +122,8 @@ pub const xev = @import("xev");
 
 // Convenience functions for better API
 /// Create a new H3 application with default configuration
-pub fn createApp(allocator: std.mem.Allocator) !App {
-    return App.init(allocator);
-}
-
-/// Create a new H3 application with performance optimizations (Legacy)
-pub fn createFastApp(allocator: std.mem.Allocator) !App {
-    const app_config = @import("core/app.zig").H3Config{
-        .use_event_pool = true,
-        .event_pool_size = 200,
-        .use_fast_middleware = true,
-    };
-    return App.initWithConfig(allocator, app_config);
-}
-
-/// Create a new H3 application with custom configuration (Legacy)
-pub fn createAppWithConfig(allocator: std.mem.Allocator, app_config: @import("core/app.zig").H3Config) !App {
-    return App.initWithConfig(allocator, app_config);
+pub fn createApp(allocator: std.mem.Allocator) !H3App {
+    return H3App.init(allocator);
 }
 
 /// Create a new H3 application with component architecture (v2.0)

@@ -2,7 +2,6 @@
 //! Provides a simple API that automatically selects the best adapter
 
 const std = @import("std");
-const H3 = @import("../core/app.zig").H3;
 const H3App = @import("../core/app.zig").H3App;
 pub const ServeOptions = @import("config.zig").ServeOptions;
 const ConfigBuilder = @import("config.zig").ConfigBuilder;

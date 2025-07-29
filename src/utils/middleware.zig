@@ -3,9 +3,8 @@
 
 const std = @import("std");
 const H3Event = @import("../core/event.zig").H3Event;
-const H3 = @import("../core/app.zig").H3;
 const Handler = @import("../core/app.zig").Handler;
-const MiddlewareContext = @import("../core/app.zig").MiddlewareContext;
+const MiddlewareContext = @import("../core/interfaces.zig").MiddlewareContext;
 const response = @import("response.zig");
 
 /// Logger middleware - logs all requests

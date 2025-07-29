@@ -6,7 +6,15 @@ IMPORTANT: This repo uses Jujutse (jj) for version control. You MUST use jj. You
 
 ## Project Overview
 
-H3 is a minimal, fast, and composable HTTP server framework for Zig, inspired by H3.js. It features:
+H3 is a minimal, fast, and composable HTTP server framework for Zig, inspired by H3.js.
+
+**IMPORTANT: This is an unstable personal project under active development.**
+- Breaking changes are expected and acceptable
+- Legacy code should be deleted rather than maintained for backward compatibility
+- No stability guarantees - APIs may change without notice
+- Focus on clean, modern implementation over compatibility
+
+### Features:
 - Zero external dependencies (only uses Zig standard library and libxev for async I/O)
 - Type-safe API with compile-time checks
 - Memory-safe design leveraging Zig's safety guarantees
@@ -103,6 +111,14 @@ zig build run-optimized_server
 - **Async I/O**: Non-blocking operations using libxev event loop
 
 ## Development Guidelines
+
+**Project Philosophy**: This is an unstable personal project. Prioritize clean, modern code over backward compatibility. Delete legacy code rather than maintaining it.
+
+### Code Evolution
+- **Breaking Changes**: Acceptable and encouraged for better design
+- **Legacy Removal**: Delete old code patterns instead of maintaining them
+- **Modern Zig**: Use latest Zig features and idioms
+- **No Deprecation**: Remove old APIs immediately when replacing them
 
 ### Memory Management
 - Always use the allocator passed to your component
